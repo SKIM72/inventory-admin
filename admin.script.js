@@ -198,7 +198,7 @@ async function handleResetAndUpload(file) {
         alert('업로드할 파일을 선택하세요.');
         return;
     }
-    if (!confirm("경고: 이 작업은 '실사 현황'의 모든 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?")) return;
+    if (!confirm("경고 : 이 작업은 '실사 현황'의 모든 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?")) return;
     if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
     try {
