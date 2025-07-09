@@ -27,35 +27,26 @@ async function showInventoryStatus() {
                 <button class="download-excel">엑셀 다운로드</button>
                 <button class="delete-selected" style="background-color: #dc3545;">선택 삭제</button>
             </div>
+            <hr>
+            <div class="controls danger-zone">
+                <button id="reset-template-download">초기화용 양식 다운로드</button>
+                <input type="file" id="reset-upload-file" accept=".xlsx, .xls">
+                <button id="reset-upload-button" style="background-color: #c82333;">⚠️ 전체 초기화 및 업로드</button>
+            </div>
             <div id="admin-progress-container" class="controls"></div>
             <div class="table-container">불러오는 중...</div>
         </div>
     `;
 
     const tableContainer = contentArea.querySelector('.table-container');
-    
-    let query = supabaseClient
-        .from('inventory_scans')
-        .select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_name)`);
+    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_name)`);
 
-    if (currentFilters.location_code) {
-        query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    }
-    if (currentFilters.barcode) {
-        query = query.ilike('barcode', `%${currentFilters.barcode}%`);
-    }
+    if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
+    if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
 
-    query = query.order(currentSort.column, { 
-        ascending: currentSort.direction === 'asc',
-        foreignTable: currentSort.column.startsWith('products.') ? 'products' : undefined
-    });
-
+    query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc', foreignTable: currentSort.column.startsWith('products.') ? 'products' : undefined });
     const { data, error } = await query;
-
-    if (error) {
-        tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다: ' + error.message;
-        return;
-    }
+    if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다: ' + error.message; return; }
 
     const progressContainer = contentArea.querySelector('#admin-progress-container');
     const totals = data.reduce((acc, item) => {
@@ -63,43 +54,18 @@ async function showInventoryStatus() {
         acc.actual += item.quantity || 0;
         return acc;
     }, { expected: 0, actual: 0 });
-
     const progress = totals.expected > 0 ? (totals.actual / totals.expected) * 100 : 0;
+    progressContainer.innerHTML = `<span><b>총 전산수량:</b> ${totals.expected}</span> <span><b>총 실사수량:</b> ${totals.actual}</span> <span><b>진척도:</b> ${progress.toFixed(2)}%</span>`;
 
-    progressContainer.innerHTML = `
-        <span><b>총 전산수량:</b> ${totals.expected}</span>
-        <span><b>총 실사수량:</b> ${totals.actual}</span>
-        <span><b>진척도:</b> ${progress.toFixed(2)}%</span>
-    `;
-
-    let tableHTML = `<table><thead><tr>
-        <th><input type="checkbox" class="select-all-checkbox"></th>
-        <th class="sortable" data-column="location_code">로케이션</th>
-        <th class="sortable" data-column="barcode">바코드</th>
-        <th class="sortable" data-column="products.product_name">상품명</th>
-        <th class="sortable" data-column="expected_quantity">전산수량</th>
-        <th class="sortable" data-column="quantity">실사수량</th>
-        <th>차이</th>
-        <th class="sortable" data-column="created_at">마지막 스캔</th>
-    </tr></thead><tbody>`;
+    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
     data.forEach(item => {
-        const expected = item.expected_quantity || 0;
-        const actual = item.quantity || 0;
-        const diff = actual - expected;
-        tableHTML += `
-            <tr>
-                <td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td>
-                <td>${item.location_code}</td><td>${item.barcode}</td>
-                <td>${item.products ? item.products.product_name : 'N/A'}</td>
-                <td>${expected}</td><td>${actual}</td><td>${diff}</td>
-                <td>${new Date(item.created_at).toLocaleString()}</td>
-            </tr>`;
+        const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
+        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td><td>${item.location_code}</td><td>${item.barcode}</td><td>${item.products ? item.products.product_name : 'N/A'}</td><td>${expected}</td><td>${actual}</td><td>${diff}</td><td>${new Date(item.created_at).toLocaleString()}</td></tr>`;
     });
     tableHTML += '</tbody></table>';
     tableContainer.innerHTML = tableHTML;
     updateSortIndicator();
 }
-
 
 // --- 2. 상품 마스터 관리 기능 ---
 async function showProductMaster() {
@@ -124,38 +90,21 @@ async function showProductMaster() {
     `;
 
     const tableContainer = contentArea.querySelector('.table-container');
-    
     let query = supabaseClient.from('products').select('*');
-
-    if (currentFilters.barcode) {
-        query = query.ilike('barcode', `%${currentFilters.barcode}%`);
-    }
-    if (currentFilters.product_name) {
-        query = query.ilike('product_name', `%${currentFilters.product_name}%`);
-    }
-
+    if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
+    if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
-    
     const { data, error } = await query;
-
     if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다.'; return; }
     
-    let tableHTML = `<table><thead><tr>
-        <th><input type="checkbox" class="select-all-checkbox"></th>
-        <th class="sortable" data-column="barcode">바코드</th>
-        <th class="sortable" data-column="product_name">상품명</th>
-    </tr></thead><tbody>`;
+    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
     data.forEach(p => {
-        tableHTML += `<tr>
-            <td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td>
-            <td>${p.barcode}</td><td>${p.product_name}</td>
-        </tr>`;
+        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
     });
     tableHTML += '</tbody></table>';
     tableContainer.innerHTML = tableHTML;
     updateSortIndicator();
 }
-
 
 // --- 3. 로케이션 마스터 관리 기능 ---
 async function showLocationMaster() {
@@ -179,28 +128,15 @@ async function showLocationMaster() {
     `;
     
     const tableContainer = contentArea.querySelector('.table-container');
-
     let query = supabaseClient.from('locations').select('*');
-
-    if (currentFilters.location_code) {
-        query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    }
-
+    if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
-    
     const { data, error } = await query;
-
     if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다.'; return; }
 
-    let tableHTML = `<table><thead><tr>
-        <th><input type="checkbox" class="select-all-checkbox"></th>
-        <th class="sortable" data-column="location_code">로케이션 코드</th>
-    </tr></thead><tbody>`;
+    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th class="sortable" data-column="location_code">로케이션 코드</th></tr></thead><tbody>`;
     data.forEach(loc => {
-        tableHTML += `<tr>
-            <td><input type="checkbox" class="row-checkbox" data-id="${loc.location_code}"></td>
-            <td>${loc.location_code}</td>
-        </tr>`;
+        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${loc.location_code}"></td><td>${loc.location_code}</td></tr>`;
     });
     tableHTML += '</tbody></table>';
     tableContainer.innerHTML = tableHTML;
@@ -235,10 +171,7 @@ function downloadTemplateExcel(headers, filename) {
 }
 
 async function uploadData(tableName, onConflictColumn, file) {
-    if (!file) {
-        alert('업로드할 파일을 선택하세요.');
-        return;
-    }
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
@@ -246,10 +179,7 @@ async function uploadData(tableName, onConflictColumn, file) {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-            if(jsonData.length === 0){
-                alert('엑셀 파일에 데이터가 없습니다.');
-                return;
-            }
+            if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
             const { error } = await supabaseClient.from(tableName).upsert(jsonData, { onConflict: onConflictColumn });
             if (error) { throw error; }
             alert('업로드 성공!');
@@ -263,12 +193,53 @@ async function uploadData(tableName, onConflictColumn, file) {
     reader.readAsArrayBuffer(file);
 }
 
-async function deleteSelected(tableName, primaryKeyColumn) {
-    const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
-    if (checkedBoxes.length === 0) {
-        alert('삭제할 항목을 선택하세요.');
+async function handleResetAndUpload(file) {
+    if (!file) {
+        alert('업로드할 파일을 선택하세요.');
         return;
     }
+    if (!confirm("경고: 이 작업은 '실사 현황'의 모든 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?")) return;
+    if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+
+    try {
+        const { error: deleteError } = await supabaseClient.from('inventory_scans').delete().neq('id', -1);
+        if (deleteError) throw new Error('데이터 삭제 중 오류 발생: ' + deleteError.message);
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+                if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
+                
+                const dataToInsert = jsonData.map(row => ({
+                    location_code: row.location_code,
+                    barcode: row.barcode,
+                    expected_quantity: row.expected_quantity,
+                    quantity: 0
+                }));
+                const { error: insertError } = await supabaseClient.from('inventory_scans').insert(dataToInsert);
+                if (insertError) throw insertError;
+
+                alert('전체 초기화 및 업로드 성공!');
+                showInventoryStatus();
+            } catch (uploadError) {
+                alert('새 데이터 업로드 실패: ' + uploadError.message);
+                console.error(uploadError);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (error) {
+        alert('작업 실패: ' + error.message);
+        console.error(error);
+    }
+}
+
+async function deleteSelected(tableName, primaryKeyColumn) {
+    const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
+    if (checkedBoxes.length === 0) { alert('삭제할 항목을 선택하세요.'); return; }
     const idsToDelete = Array.from(checkedBoxes).map(box => box.dataset.id);
     if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
         const { error } = await supabaseClient.from(tableName).delete().in(primaryKeyColumn, idsToDelete);
@@ -336,18 +307,22 @@ contentArea.addEventListener('click', async function(event) {
     } else if (sectionId === 'locations-section') {
         tableName = 'locations'; primaryKey = 'location_code'; fileName = 'locations';
     }
-
-    if (target.classList.contains('delete-selected')) {
+    
+    if (target.id === 'reset-template-download') {
+        downloadTemplateExcel(['location_code', 'barcode', 'expected_quantity'], 'inventory_reset_template.xlsx');
+    }
+    else if (target.id === 'reset-upload-button') {
+        const fileInput = document.getElementById('reset-upload-file');
+        handleResetAndUpload(fileInput.files[0]);
+    }
+    else if (target.classList.contains('delete-selected')) {
         const tableMap = { 'inventory-section': 'inventory_scans', 'products-section': 'products', 'locations-section': 'locations' };
         const pkMap = { 'inventory-section': 'id', 'products-section': 'barcode', 'locations-section': 'location_code' };
         deleteSelected(tableMap[sectionId], pkMap[sectionId]);
     } 
     else if (target.classList.contains('download-template')) {
-        if (sectionId === 'products-section') {
-            downloadTemplateExcel(['barcode', 'product_name'], 'products_template.xlsx');
-        } else if (sectionId === 'locations-section') {
-            downloadTemplateExcel(['location_code'], 'locations_template.xlsx');
-        }
+        if (sectionId === 'products-section') downloadTemplateExcel(['barcode', 'product_name'], 'products_template.xlsx');
+        else if (sectionId === 'locations-section') downloadTemplateExcel(['location_code'], 'locations_template.xlsx');
     }
     else if (target.classList.contains('upload-data')) {
         const fileInput = section.querySelector('.upload-file');
