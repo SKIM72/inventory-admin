@@ -11,6 +11,36 @@ const navButtons = document.querySelectorAll('nav button');
 let currentSort = {};
 let currentFilters = {};
 
+// --- 페이지네이션을 포함한 전체 데이터 조회 헬퍼 함수 ---
+async function fetchAllWithPagination(queryBuilder) {
+    let allData = [];
+    let page = 0;
+    const pageSize = 1000;
+
+    while (true) {
+        const { data, error } = await queryBuilder.range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) {
+            // 단일 에러가 발생하더라도 루프를 중단하고 에러를 반환합니다.
+            console.error("데이터 조회 중 오류 발생:", error);
+            return { data: allData, error }; 
+        }
+
+        if (data && data.length > 0) {
+            allData = allData.concat(data);
+        }
+
+        // 가져온 데이터가 페이지 크기보다 작으면 마지막 페이지이므로 루프를 종료합니다.
+        if (!data || data.length < pageSize) {
+            break;
+        }
+
+        page++;
+    }
+
+    return { data: allData, error: null };
+}
+
 
 // --- 1. 실사 현황 관리 기능 ---
 async function showInventoryStatus() {
@@ -45,7 +75,9 @@ async function showInventoryStatus() {
     if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
 
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc', foreignTable: currentSort.column.startsWith('products.') ? 'products' : undefined });
-    const { data, error } = await query;
+    
+    // 페이지네이션으로 모든 데이터 가져오기
+    const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다: ' + error.message; return; }
 
     const progressContainer = contentArea.querySelector('#admin-progress-container');
@@ -94,7 +126,9 @@ async function showProductMaster() {
     if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
     if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
-    const { data, error } = await query;
+    
+    // 페이지네이션으로 모든 데이터 가져오기
+    const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다.'; return; }
     
     let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
@@ -131,7 +165,9 @@ async function showLocationMaster() {
     let query = supabaseClient.from('locations').select('*');
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
-    const { data, error } = await query;
+    
+    // 페이지네이션으로 모든 데이터 가져오기
+    const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = '데이터를 불러오는 데 실패했습니다.'; return; }
 
     let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th class="sortable" data-column="location_code">로케이션 코드</th></tr></thead><tbody>`;
@@ -198,7 +234,7 @@ async function handleResetAndUpload(file) {
         alert('업로드할 파일을 선택하세요.');
         return;
     }
-    if (!confirm("경고 : 이 작업은 '실사 현황'의 모든 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?")) return;
+    if (!confirm("경고: 이 작업은 '실사 현황'의 모든 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?")) return;
     if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
     try {
@@ -329,9 +365,12 @@ contentArea.addEventListener('click', async function(event) {
         uploadData(tableName, primaryKey, fileInput.files[0]);
     }
     else if (target.classList.contains('download-excel')) {
+        alert('전체 데이터를 다운로드합니다. 데이터 양에 따라 시간이 걸릴 수 있습니다.');
         const tableToDownload = sectionId === 'inventory-section' ? 'inventory_scans' : tableName;
+        
         if (tableToDownload === 'inventory_scans') {
-             const { data: inventoryData, error } = await supabaseClient.from('inventory_scans').select(`*, products(product_name)`);
+             const query = supabaseClient.from('inventory_scans').select(`*, products(product_name)`);
+             const { data: inventoryData, error } = await fetchAllWithPagination(query);
              if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
              const flattenedData = inventoryData.map(item => ({
                 '로케이션': item.location_code, '바코드': item.barcode, '상품명': item.products ? item.products.product_name : 'N/A',
@@ -340,7 +379,8 @@ contentArea.addEventListener('click', async function(event) {
             }));
             downloadExcel(flattenedData, 'inventory_status.xlsx');
         } else {
-            const { data, error } = await supabaseClient.from(tableToDownload).select('*');
+            const query = supabaseClient.from(tableToDownload).select('*');
+            const { data, error } = await fetchAllWithPagination(query);
             if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
             downloadExcel(data, `${fileName}_master.xlsx`);
         }
@@ -375,3 +415,6 @@ contentArea.addEventListener('change', function(event) {
 });
 
 navButtons.forEach(button => button.addEventListener('click', handleNavClick));
+
+// 초기 화면 로드
+document.getElementById('nav-inventory').click();
