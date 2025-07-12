@@ -40,7 +40,7 @@ function refreshCurrentView() {
     }
 }
 
-// 채널 선택 드롭다운 채우기 및 새로고침
+// 채널 선택 드롭다운 채우기
 async function populateChannelSwitcher() {
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     if (error) {
@@ -68,7 +68,6 @@ async function populateChannelSwitcher() {
         return;
     }
     
-    // 이전에 선택했던 채널이 삭제되어 값이 변경된 경우에만 뷰를 새로고침
     if (previousChannelId && previousChannelId !== channelSwitcher.value) {
         refreshCurrentView();
     }
@@ -467,10 +466,19 @@ contentArea.addEventListener('change', function(event) {
     }
 });
 
+// ✅ Enter 키 이벤트 리스너 수정
 contentArea.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && e.target.classList.contains('filter-input')) {
+    if (e.key !== 'Enter') return;
+
+    if (e.target.classList.contains('filter-input')) {
         e.preventDefault();
-        e.target.closest('.card-body').querySelector('.search-button').click();
+        const searchButton = e.target.closest('.card-body').querySelector('.search-button');
+        if (searchButton) {
+            searchButton.click();
+        }
+    } else if (e.target.id === 'new-channel-name') { // ✅ 채널 추가 input 처리
+        e.preventDefault();
+        document.getElementById('add-channel-button').click();
     }
 });
 
