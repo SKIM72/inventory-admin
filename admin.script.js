@@ -1,35 +1,30 @@
 const { createClient } = supabase;
 const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
-// 로그인 및 '승인된 사용자' 권한 확인 (강화된 버전)
+// 로그인 및 관리자 권한 확인
 (async () => {
     const { data: { session }, error } = await supabaseClient.auth.getSession();
-
-    // 1. 세션이 없거나, 2. 세션은 있지만 사용자가 승인되지 않았다면 즉시 튕겨냄
     if (error || !session || session.user.user_metadata.is_approved !== true) {
-        await supabaseClient.auth.signOut(); // 만약을 위해 로그아웃 처리
+        await supabaseClient.auth.signOut();
         alert('로그인이 필요하거나, 승인되지 않은 계정입니다.');
         window.location.href = 'login.html';
         return;
     }
 
-    // 이하 코드는 모두 승인된 사용자만 실행 가능
     const user = session.user;
     
-    // 현재 로그인된 사용자 이메일 표시
     const userEmailDisplay = document.getElementById('current-user-email');
     if (userEmailDisplay) {
         userEmailDisplay.textContent = user.email;
     }
 
-    // 최고 관리자 권한 확인
     const userManagementNav = document.getElementById('nav-users');
     if (user.email !== 'eowert72@gmail.com') {
         if(userManagementNav) userManagementNav.style.display = 'none';
     }
     
-    // 페이지 초기화 함수 호출
-    populateChannelSwitcher();
+    // ✅ 페이지 초기화 함수 호출 (초기 로드 플래그 전달)
+    populateChannelSwitcher(true);
 })();
 
 
@@ -68,7 +63,8 @@ function refreshCurrentView() {
     }
 }
 
-async function populateChannelSwitcher() {
+// ✅ 채널 선택 드롭다운 채우기 (초기 로드인지 확인하는 파라미터 추가)
+async function populateChannelSwitcher(isInitialLoad = false) {
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     if (error) {
         alert('채널 목록을 불러오는 데 실패했습니다.');
@@ -95,8 +91,9 @@ async function populateChannelSwitcher() {
         return;
     }
     
-    if (!previousChannelId || previousChannelId !== channelSwitcher.value) {
-         handleNavClick({ target: document.querySelector('nav button.active') || document.getElementById('nav-inventory') });
+    // ✅ 초기 로드가 아닐 경우에만, 채널 변경 시 현재 뷰를 새로고침
+    if (!isInitialLoad && previousChannelId && previousChannelId !== channelSwitcher.value) {
+         refreshCurrentView();
     }
 }
 
