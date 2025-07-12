@@ -28,14 +28,18 @@ html, body {
 body {
     display: flex;
     flex-direction: column;
+    height: 100%;
 }
 
 /* --- Header & Navigation --- */
+header, nav {
+    flex-shrink: 0;
+}
+
 header {
     background-color: #212529; 
     color: #ffffff;
     padding: 1rem 2rem;
-    flex-shrink: 0;
 }
 
 header h1 {
@@ -46,7 +50,6 @@ header h1 {
 nav {
     background-color: #343a40;
     padding: 0.5rem 2rem;
-    flex-shrink: 0;
     display: flex;
     gap: 0.5rem;
 }
@@ -77,33 +80,39 @@ nav button.active {
 main {
     flex-grow: 1;
     padding: 1.5rem 2rem;
-    overflow-y: auto;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
-/* ✅ 초기 메시지 중앙 정렬 스타일 */
 main#content-area > h2 {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 80%; /* 수직 중앙 정렬을 위해 높이 설정 */
+    height: 100%;
     margin: 0;
     font-size: 2rem;
     color: var(--text-secondary-color);
     font-weight: 500;
 }
 
-
 .content-section {
-    display: none;
+    display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    height: 100%;
 }
 
 .content-section.active {
     display: flex;
 }
 
-/* --- Page Header within Main --- */
+/* --- 상단 컨트롤 영역 --- */
+.sticky-controls {
+    flex-shrink: 0;
+    background-color: var(--background-color);
+}
+
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -121,12 +130,12 @@ main#content-area > h2 {
     gap: 0.75rem;
 }
 
-
 /* --- Card Layout --- */
 .control-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 1.5rem;
+    padding-bottom: 1.5rem;
 }
 
 .card {
@@ -141,7 +150,6 @@ main#content-area > h2 {
     border-bottom: 1px solid var(--border-color);
     font-size: 1rem;
     font-weight: 700;
-    color: var(--text-primary-color);
 }
 
 .card-body {
@@ -160,19 +168,13 @@ main#content-area > h2 {
     color: var(--danger-color);
 }
 
-/* --- Inputs & Buttons inside Cards --- */
+/* --- Inputs & Buttons --- */
 .card-body input[type="text"] {
     flex: 1 1 150px;
     padding: 0.6rem 0.8rem;
     font-size: 0.9rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-}
-
-.card-body input[type="text"]:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
 }
 
 .card-body button,
@@ -183,27 +185,33 @@ main#content-area > h2 {
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.2s, transform 0.1s;
     color: white;
 }
 
-.card-body button:active,
-.actions-group button:active {
-    transform: scale(0.97);
+.btn-primary {
+    background-color: var(--primary-color);
+}
+.btn-primary:hover {
+    background-color: var(--primary-hover-color);
 }
 
-.btn-primary { background-color: var(--primary-color); }
-.btn-primary:hover { background-color: var(--primary-hover-color); }
+.btn-secondary {
+    background-color: #6c757d;
+}
+.btn-secondary:hover {
+    background-color: #5a6268;
+}
 
-.btn-danger { background-color: var(--danger-color); }
-.btn-danger:hover { background-color: var(--danger-hover-color); }
-
-.btn-secondary { background-color: #6c757d; }
-.btn-secondary:hover { background-color: #5a6268; }
+.btn-danger {
+    background-color: var(--danger-color);
+}
+.btn-danger:hover {
+    background-color: var(--danger-hover-color);
+}
 
 
 /* --- Table Styles --- */
-.table-container {
+.table-wrapper {
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -211,7 +219,22 @@ main#content-area > h2 {
     box-shadow: 0 2px 10px var(--shadow-sm);
     flex-grow: 1; 
     min-height: 300px;
+    position: relative; /* 가상 요소를 위한 기준점 */
 }
+
+/* ✅ 스크롤 가림막 역할을 할 가상 요소 */
+.table-wrapper::before {
+    content: '';
+    position: sticky;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 1px; /* 실제로는 보이지 않는 높이 */
+    background-color: #f8f9fa; /* th 배경색과 동일하게 */
+    z-index: 3; /* th보다 높게 */
+    display: block;
+}
+
 
 table {
     width: 100%;
@@ -226,32 +249,23 @@ th, td {
     border: 1px solid var(--border-color);
 }
 
-tr:last-child td {
-    border-bottom: 1px solid var(--border-color);
-}
-
 th {
     position: sticky;
     top: 0;
     background-color: #f8f9fa;
-    z-index: 1;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--text-primary-color);
+    z-index: 2; 
 }
 
 tbody tr:hover {
     background-color: #f1f5ff;
 }
 
-th:nth-child(1),
-td:nth-child(1) {
+th:nth-child(1), td:nth-child(1) {
     width: 50px;
     text-align: center;
 }
 
-th:nth-child(2),
-td:nth-child(2) {
+th:nth-child(2), td:nth-child(2) {
     width: 70px;
     text-align: center;
 }

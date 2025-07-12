@@ -51,21 +51,35 @@ function refreshCurrentView() {
     }
 }
 
-// --- 1. 실사 현황 관리 기능 ---
-async function showInventoryStatus() {
-    // ✅ 검색 input에 'filter-input' 클래스 추가
-    contentArea.innerHTML = `
-        <div id="inventory-section" class="content-section active">
-            <div class="page-header"><h2>실사 현황</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div>
-            <div class="control-grid">
-                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}"><input type="text" id="filter-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-                <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-                <div class="card danger-zone"><div class="card-header">⚠️ 전체 초기화 (주의)</div><div class="card-body"><button id="reset-template-download" class="btn-secondary">초기화용 양식 다운로드</button><input type="file" id="reset-upload-file" accept=".xlsx, .xls"><button id="reset-upload-button" class="btn-danger">전체 초기화 및 업로드</button></div></div>
+// ✅ 틀 고정을 위한 HTML 구조 변경
+function generatePageStructure(title, controlGridHTML) {
+    return `
+        <div class="sticky-controls">
+            <div class="page-header">
+                <h2>${title}</h2>
+                <div class="actions-group">
+                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                </div>
             </div>
-            <div id="admin-progress-container" class="controls"></div>
-            <div class="table-container">불러오는 중...</div>
+            <div class="control-grid">
+                ${controlGridHTML}
+            </div>
+            <div id="admin-progress-container"></div>
+        </div>
+        <div class="table-wrapper">
+             <div class="table-container">불러오는 중...</div>
         </div>
     `;
+}
+
+// --- 1. 실사 현황 관리 기능 ---
+async function showInventoryStatus() {
+    const controlGrid = `
+        <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}"><input type="text" id="filter-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+        <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+        <div class="card danger-zone"><div class="card-header">⚠️ 전체 초기화 (주의)</div><div class="card-body"><button id="reset-template-download" class="btn-secondary">초기화용 양식 다운로드</button><input type="file" id="reset-upload-file" accept=".xlsx, .xls"><button id="reset-upload-button" class="btn-danger">전체 초기화 및 업로드</button></div></div>
+    `;
+    contentArea.innerHTML = `<div id="inventory-section" class="content-section active">${generatePageStructure('실사 현황', controlGrid)}</div>`;
 
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_name)`);
@@ -75,10 +89,7 @@ async function showInventoryStatus() {
 
     const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
     const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
-    query = query.order(sortColumn, { 
-        ascending: currentSort.direction === 'asc', 
-        foreignTable: foreignTable 
-    });
+    query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
@@ -89,33 +100,31 @@ async function showInventoryStatus() {
         acc.actual += item.quantity || 0;
         return acc;
     }, { expected: 0, actual: 0 });
-    progressContainer.innerHTML = data.length > 0 ? `<span><b>총 전산수량:</b> ${totals.expected}</span> <span><b>총 실사수량:</b> ${totals.actual}</span> <span><b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%</span>` : '';
+    progressContainer.innerHTML = data.length > 0 ? `<div style="padding-bottom: 1rem;"><b>총 전산수량:</b> ${totals.expected} | <b>총 실사수량:</b> ${totals.actual} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%</div>` : '';
 
-    if (data.length === 0) { tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`; return; }
-
-    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
-    data.forEach((item, index) => {
-        const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
-        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td><td>${index + 1}</td><td>${item.location_code}</td><td>${item.barcode}</td><td>${item.products ? item.products.product_name : 'N/A'}</td><td>${expected}</td><td>${actual}</td><td>${diff}</td><td>${new Date(item.created_at).toLocaleString()}</td></tr>`;
-    });
-    tableHTML += '</tbody></table>';
-    tableContainer.innerHTML = tableHTML;
+    if (data.length === 0 && (currentFilters.location_code || currentFilters.barcode)) {
+        tableContainer.innerHTML = `<p class="no-data-message">검색 결과가 없습니다.</p>`;
+    } else if (data.length === 0) {
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
+    } else {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
+        data.forEach((item, index) => {
+            const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td><td>${index + 1}</td><td>${item.location_code}</td><td>${item.barcode}</td><td>${item.products ? item.products.product_name : 'N/A'}</td><td>${expected}</td><td>${actual}</td><td>${diff}</td><td>${new Date(item.created_at).toLocaleString()}</td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
     updateSortIndicator();
 }
 
 // --- 2. 상품 마스터 관리 기능 ---
 async function showProductMaster() {
-    // ✅ 검색 input에 'filter-input' 클래스 추가
-    contentArea.innerHTML = `
-        <div id="products-section" class="content-section active">
-             <div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div>
-            <div class="control-grid">
-                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-                <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-            </div>
-            <div class="table-container">불러오는 중...</div>
-        </div>
+    const controlGrid = `
+        <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+        <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
     `;
+    contentArea.innerHTML = `<div id="products-section" class="content-section active">${generatePageStructure('상품 마스터 관리', controlGrid)}</div>`;
 
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('products').select('*');
@@ -125,30 +134,27 @@ async function showProductMaster() {
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
-    if (data.length === 0) { tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`; return; }
     
-    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
-    data.forEach((p, index) => {
-        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${index + 1}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
-    });
-    tableHTML += '</tbody></table>';
-    tableContainer.innerHTML = tableHTML;
+    if (data.length === 0) {
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
+    } else {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
+        data.forEach((p, index) => {
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${index + 1}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
     updateSortIndicator();
 }
 
 // --- 3. 로케이션 마스터 관리 기능 ---
 async function showLocationMaster() {
-    // ✅ 검색 input에 'filter-input' 클래스 추가
-    contentArea.innerHTML = `
-        <div id="locations-section" class="content-section active">
-            <div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div>
-            <div class="control-grid">
-                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-                <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-            </div>
-            <div class="table-container">불러오는 중...</div>
-        </div>
+    const controlGrid = `
+        <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+        <div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
     `;
+    contentArea.innerHTML = `<div id="locations-section" class="content-section active">${generatePageStructure('로케이션 마스터 관리', controlGrid)}</div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('locations').select('*');
@@ -157,14 +163,17 @@ async function showLocationMaster() {
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
-    if (data.length === 0) { tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`; return; }
 
-    let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션 코드</th></tr></thead><tbody>`;
-    data.forEach((loc, index) => {
-        tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${loc.location_code}"></td><td>${index + 1}</td><td>${loc.location_code}</td></tr>`;
-    });
-    tableHTML += '</tbody></table>';
-    tableContainer.innerHTML = tableHTML;
+    if (data.length === 0) {
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
+    } else {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션 코드</th></tr></thead><tbody>`;
+        data.forEach((loc, index) => {
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${loc.location_code}"></td><td>${index + 1}</td><td>${loc.location_code}</td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
     updateSortIndicator();
 }
 
@@ -283,6 +292,7 @@ function handleNavClick(event) {
     clickedButton.classList.add('active');
     const navId = clickedButton.id;
     
+    contentArea.innerHTML = `<h2>${clickedButton.textContent} 화면을 불러오는 중...</h2>`
     currentFilters = {};
     if (navId === 'nav-inventory') {
         currentSort = { column: 'created_at', direction: 'desc', defaultColumn: 'created_at', defaultDirection: 'desc', isDefault: true };
@@ -399,10 +409,8 @@ contentArea.addEventListener('change', function(event) {
     }
 });
 
-// ✅ Enter 키로 검색 실행하는 이벤트 리스너 추가
 contentArea.addEventListener('keydown', function(e) {
     if (e.key !== 'Enter') return;
-
     if (e.target.classList.contains('filter-input')) {
         e.preventDefault();
         const searchButton = e.target.closest('.card-body').querySelector('.search-button');
