@@ -123,7 +123,6 @@
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
 
-        // ✅ Enter 키 이벤트 처리 로직 추가
         emailInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -138,10 +137,34 @@
             }
         });
 
+        // ✅ 회원가입 로직 수정
         signupButton.addEventListener('click', async () => {
-            const { error } = await supabaseClient.auth.signUp({
-                email: emailInput.value,
-                password: passwordInput.value,
+            const email = emailInput.value;
+            const password = passwordInput.value;
+
+            // 1. 이메일 또는 비밀번호가 비어있는지 확인
+            if (!email || !password) {
+                alert('이메일과 비밀번호를 모두 입력해주세요.');
+                return;
+            }
+
+            // 2. 이메일이 이미 존재하는지 먼저 확인
+            const { data: exists, error: rpcError } = await supabaseClient.rpc('email_exists', { email_to_check: email });
+
+            if (rpcError) {
+                alert('오류가 발생했습니다: ' + rpcError.message);
+                return;
+            }
+
+            if (exists) {
+                alert('이미 가입된 이메일 주소입니다.');
+                return;
+            }
+
+            // 3. 존재하지 않는 경우에만 회원가입 진행
+            const { error: signUpError } = await supabaseClient.auth.signUp({
+                email: email,
+                password: password,
                 options: {
                     data: {
                         is_approved: false 
@@ -149,8 +172,8 @@
                 }
             });
 
-            if (error) {
-                alert('회원가입 실패: ' + error.message);
+            if (signUpError) {
+                alert('회원가입 실패: ' + signUpError.message);
             } else {
                 alert('회원가입 요청이 완료되었습니다. 관리자의 승인 후 로그인할 수 있습니다.');
                 window.location.href = 'login.html';
