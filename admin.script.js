@@ -1,19 +1,43 @@
-// Supabase 클라이언트 설정
-const SUPABASE_URL = 'https://qjftovamkqhxaenueood.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const { createClient } = supabase;
+const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
-// DOM 요소
+// 로그인 및 관리자 권한 확인
+(async () => {
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+    if (error || !session) {
+        alert('로그인이 필요합니다.');
+        window.location.href = 'login.html';
+        return;
+    }
+
+    const user = session.user;
+    
+    // 현재 로그인된 사용자 이메일 표시
+    const userEmailDisplay = document.getElementById('current-user-email');
+    if (userEmailDisplay) {
+        userEmailDisplay.textContent = user.email;
+    }
+
+    // 관리자 권한 확인
+    const userManagementNav = document.getElementById('nav-users');
+    if (user.email !== 'eowert72@gmail.com') {
+        if(userManagementNav) userManagementNav.style.display = 'none';
+    }
+    
+    // 페이지 초기화 함수 호출
+    populateChannelSwitcher();
+})();
+
+
 const contentArea = document.getElementById('content-area');
 const navButtons = document.querySelectorAll('nav button');
 const channelSwitcher = document.getElementById('channel-switcher');
+const logoutButton = document.getElementById('logout-button');
 
-// 상태 변수
 let currentSort = {};
 let currentFilters = {};
 let currentChannelId = localStorage.getItem('selectedAdminChannelId');
 
-// 페이지네이션 헬퍼 함수
 async function fetchAllWithPagination(queryBuilder) {
     let allData = [];
     let page = 0;
@@ -28,7 +52,6 @@ async function fetchAllWithPagination(queryBuilder) {
     return { data: allData, error: null };
 }
 
-// 현재 뷰 새로고침 함수
 function refreshCurrentView() {
     const activeNav = document.querySelector('nav button.active');
     if (!activeNav) return;
@@ -37,10 +60,10 @@ function refreshCurrentView() {
         case 'nav-products': showProductMaster(); break;
         case 'nav-locations': showLocationMaster(); break;
         case 'nav-channels': showChannelMaster(); break;
+        case 'nav-users': showUserManagement(); break;
     }
 }
 
-// 채널 선택 드롭다운 채우기
 async function populateChannelSwitcher() {
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     if (error) {
@@ -68,15 +91,14 @@ async function populateChannelSwitcher() {
         return;
     }
     
-    if (previousChannelId && previousChannelId !== channelSwitcher.value) {
-        refreshCurrentView();
+    // 이전에 선택했던 채널이 삭제되어 값이 변경된 경우, 혹은 첫 로딩 시에만 뷰를 새로고침
+    if (!previousChannelId || previousChannelId !== channelSwitcher.value) {
+         handleNavClick({ target: document.querySelector('nav button.active') || document.getElementById('nav-inventory') });
     }
 }
 
-// --- 1. 실사 현황 관리 기능 ---
 async function showInventoryStatus() {
     contentArea.innerHTML = `<div id="inventory-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>실사 현황</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}"><input type="text" id="filter-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="delete-selected btn-danger">선택 삭제</button></div></div><div class="card danger-zone"><div class="card-header">⚠️ 전체 초기화 (주의)</div><div class="card-body"><button id="reset-template-download" class="btn-secondary">초기화용 양식 다운로드</button><input type="file" id="reset-upload-file" accept=".xlsx, .xls"><button id="reset-upload-button" class="btn-danger">전체 초기화 및 업로드</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
-
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_name)`).eq('channel_id', currentChannelId);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
@@ -106,10 +128,8 @@ async function showInventoryStatus() {
     updateSortIndicator();
 }
 
-// --- 2. 상품 마스터 관리 기능 ---
 async function showProductMaster() {
     contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
-
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('products').select('*').eq('channel_id', currentChannelId);
     if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
@@ -132,7 +152,6 @@ async function showProductMaster() {
     updateSortIndicator();
 }
 
-// --- 3. 로케이션 마스터 관리 기능 ---
 async function showLocationMaster() {
     contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
     
@@ -157,7 +176,6 @@ async function showLocationMaster() {
     updateSortIndicator();
 }
 
-// --- 4. 채널 관리 기능 ---
 async function showChannelMaster() {
     contentArea.innerHTML = `
         <div id="channels-section" class="content-section active">
@@ -173,7 +191,7 @@ async function showChannelMaster() {
                 <div class="card">
                     <div class="card-header">채널 목록</div>
                     <div id="channel-list-container" class="card-body" style="flex-direction: column; align-items: stretch; padding: 0;">
-                        <p>불러오는 중...</p>
+                        <p style="padding: 1.25rem;">불러오는 중...</p>
                     </div>
                 </div>
             </div>
@@ -183,7 +201,7 @@ async function showChannelMaster() {
     const listContainer = document.getElementById('channel-list-container');
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     
-    if (error) { listContainer.innerHTML = `<p>채널 목록을 불러오는 데 실패했습니다.</p>`; return; }
+    if (error) { listContainer.innerHTML = `<p style="padding: 1.25rem;">채널 목록을 불러오는 데 실패했습니다.</p>`; return; }
     if (data.length === 0) { listContainer.innerHTML = `<p style="padding: 1.25rem;">생성된 채널이 없습니다.</p>`; return; }
 
     let listHTML = '<ul class="channel-list">';
@@ -194,7 +212,47 @@ async function showChannelMaster() {
     listContainer.innerHTML = listHTML;
 }
 
-// --- 공통 함수들 ---
+async function showUserManagement() {
+    contentArea.innerHTML = `
+        <div id="users-section" class="content-section active">
+            <div class="page-header"><h2>사용자 관리</h2></div>
+            <div class="card">
+                <div class="card-header">사용자 목록</div>
+                <div id="user-list-container" class="card-body" style="flex-direction: column; align-items: stretch; padding: 0;">
+                    <p style="padding: 1.25rem;">사용자 목록을 불러오는 중...</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const listContainer = document.getElementById('user-list-container');
+    const { data, error } = await supabaseClient.rpc('list_all_users');
+
+    if (error) {
+        listContainer.innerHTML = `<p style="padding: 1.25rem;">사용자 목록을 불러오는 데 실패했습니다.</p>`;
+        return;
+    }
+    if (data.length === 0) {
+        listContainer.innerHTML = `<p style="padding: 1.25rem;">가입한 사용자가 없습니다.</p>`;
+        return;
+    }
+
+    let listHTML = '<ul class="user-list">';
+    data.forEach(user => {
+        const statusClass = user.is_approved ? 'status-approved' : 'status-pending';
+        const statusText = user.is_approved ? '승인 완료' : '승인 대기';
+        
+        let actionButton = '';
+        if (!user.is_approved) {
+            actionButton = `<button class="approve-user-button btn-primary" data-id="${user.id}" data-email="${user.email}">승인</button>`;
+        }
+
+        listHTML += `<li class="user-list-item"><span class="user-info">${user.email}</span><div><span class="user-status ${statusClass}">${statusText}</span>${actionButton}</div></li>`;
+    });
+    listHTML += '</ul>';
+    listContainer.innerHTML = listHTML;
+}
+
 function updateSortIndicator() {
     contentArea.querySelectorAll('th.sortable').forEach(th => {
         const icon = th.querySelector('.sort-icon');
@@ -306,7 +364,6 @@ async function deleteSelected(tableName, primaryKeyColumn) {
     }
 }
 
-// --- 네비게이션 및 이벤트 위임 ---
 function handleNavClick(event) {
     navButtons.forEach(btn => btn.classList.remove('active'));
     const clickedButton = event.target;
@@ -326,6 +383,8 @@ function handleNavClick(event) {
         showLocationMaster();
     } else if (navId === 'nav-channels') {
         showChannelMaster();
+    } else if (navId === 'nav-users') {
+        showUserManagement();
     }
 }
 
@@ -383,10 +442,7 @@ contentArea.addEventListener('click', async function(event) {
     else if (target.id === 'add-channel-button') {
         const input = document.getElementById('new-channel-name');
         const newName = input.value.trim();
-        if (!newName) {
-            alert('채널 이름을 입력하세요.');
-            return;
-        }
+        if (!newName) { alert('채널 이름을 입력하세요.'); return; }
         const { error } = await supabaseClient.from('channels').insert({ name: newName });
         if (error) {
             alert('채널 추가 실패: ' + error.message);
@@ -411,6 +467,19 @@ contentArea.addEventListener('click', async function(event) {
                 }
                 await populateChannelSwitcher();
                 showChannelMaster();
+            }
+        }
+    }
+    else if (target.classList.contains('approve-user-button')) {
+        const userId = target.dataset.id;
+        const userEmail = target.dataset.email;
+        if (confirm(`'${userEmail}' 사용자를 승인하시겠습니까?`)) {
+            const { error } = await supabaseClient.rpc('approve_user', { user_id_to_approve: userId });
+            if (error) {
+                alert('사용자 승인 실패: ' + error.message);
+            } else {
+                alert(`'${userEmail}' 사용자가 승인되었습니다.`);
+                showUserManagement();
             }
         }
     }
@@ -466,17 +535,12 @@ contentArea.addEventListener('change', function(event) {
     }
 });
 
-// ✅ Enter 키 이벤트 리스너 수정
 contentArea.addEventListener('keydown', function(e) {
     if (e.key !== 'Enter') return;
-
     if (e.target.classList.contains('filter-input')) {
         e.preventDefault();
-        const searchButton = e.target.closest('.card-body').querySelector('.search-button');
-        if (searchButton) {
-            searchButton.click();
-        }
-    } else if (e.target.id === 'new-channel-name') { // ✅ 채널 추가 input 처리
+        e.target.closest('.card-body').querySelector('.search-button').click();
+    } else if (e.target.id === 'new-channel-name') {
         e.preventDefault();
         document.getElementById('add-channel-button').click();
     }
@@ -488,7 +552,15 @@ channelSwitcher.addEventListener('change', () => {
     document.querySelector('nav button.active').click();
 });
 
-navButtons.forEach(button => button.addEventListener('click', handleNavClick));
+logoutButton.addEventListener('click', async () => {
+    if (confirm('로그아웃하시겠습니까?')) {
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) {
+            alert('로그아웃 실패: ' + error.message);
+        } else {
+            window.location.href = 'login.html';
+        }
+    }
+});
 
-// 페이지 시작
-populateChannelSwitcher();
+navButtons.forEach(button => button.addEventListener('click', handleNavClick));

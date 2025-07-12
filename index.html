@@ -2,14 +2,18 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>재고 실사 시스템 - 관리자 페이지</title>
+    <title>재고 관리 시스템 - 관리자 페이지</title>
     <link rel="stylesheet" href="admin.style.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <header>
-        <h1>재고 실사 시스템 - 관리자</h1>
+        <h1>재고 관리 시스템 - 관리자</h1>
+        <div class="header-user-info">
+            <span id="current-user-email"></span>
+            <button id="logout-button" class="btn-secondary">로그아웃</button>
+        </div>
     </header>
     <nav>
         <div id="channel-switcher-container">
@@ -19,7 +23,9 @@
         <button id="nav-inventory">실사 현황</button>
         <button id="nav-products">상품 마스터</button>
         <button id="nav-locations">로케이션 마스터</button>
-        <button id="nav-channels">채널 관리</button> </nav>
+        <button id="nav-channels">채널 관리</button>
+        <button id="nav-users">사용자 관리</button>
+    </nav>
     <main id="content-area">
         <h2>관리할 메뉴를 선택하세요.</h2>
     </main>

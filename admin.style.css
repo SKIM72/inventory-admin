@@ -40,6 +40,7 @@ header {
     background-color: #212529; 
     color: #ffffff;
     padding: 1rem 2rem;
+    position: relative; /* 자식 요소의 absolute 위치 기준 */
 }
 
 header h1 {
@@ -179,7 +180,8 @@ main#content-area > h2 {
 }
 
 .card-body button,
-.actions-group button {
+.actions-group button,
+header button {
     padding: 0.6rem 1.2rem;
     font-size: 0.9rem;
     font-weight: 500;
@@ -292,20 +294,17 @@ th:nth-child(2), td:nth-child(2) {
     font-size: 0.9rem;
 }
 
-/* 채널 관리 화면 스타일 */
-.channel-management-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 1.5rem;
-}
-
-.channel-list {
+/* 채널/사용자 관리 화면 스타일 */
+.channel-list,
+.user-list {
     list-style-type: none;
     padding: 0;
     margin: 0;
+    width: 100%;
 }
 
-.channel-list-item {
+.channel-list-item,
+.user-list-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -313,10 +312,47 @@ th:nth-child(2), td:nth-child(2) {
     border-bottom: 1px solid var(--border-color);
 }
 
-.channel-list-item:last-child {
+.channel-list-item:last-child,
+.user-list-item:last-child {
     border-bottom: none;
 }
 
-.channel-name {
+.channel-name,
+.user-info {
     font-weight: 500;
+}
+
+.user-status {
+    padding: 0.25rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
+
+.status-approved {
+    background-color: #e7f7f0;
+    color: #28a745;
+}
+
+.status-pending {
+    background-color: #fff8e1;
+    color: #ffc107;
+}
+
+/* 헤더 사용자 정보 스타일 */
+.header-user-info {
+    position: absolute;
+    right: 2rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+#current-user-email {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #e9ecef;
 }
