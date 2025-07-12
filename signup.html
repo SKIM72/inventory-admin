@@ -108,7 +108,7 @@
                 <label for="password">비밀번호</label>
                 <input type="password" id="password" placeholder="6자 이상 입력">
             </div>
-            <button id="signup-button" class="channel-button">가입하기</button>
+            <button id="signup-button" class="channel-button">가입 요청</button>
              <p style="text-align: center; margin-top: 1rem;">
                 이미 계정이 있으신가요? <a href="login.html">로그인</a>
             </p>
@@ -117,7 +117,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         const { createClient } = supabase;
-        const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIxzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
+        const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
         const signupButton = document.getElementById('signup-button');
         const emailInput = document.getElementById('email');
@@ -127,12 +127,17 @@
             const { error } = await supabaseClient.auth.signUp({
                 email: emailInput.value,
                 password: passwordInput.value,
+                options: {
+                    data: {
+                        is_approved: false 
+                    }
+                }
             });
 
             if (error) {
                 alert('회원가입 실패: ' + error.message);
             } else {
-                alert('회원가입 성공! 이메일을 확인하여 인증을 완료해주세요.');
+                alert('회원가입 요청이 완료되었습니다. 관리자의 승인 후 로그인할 수 있습니다.');
                 window.location.href = 'login.html';
             }
         });
