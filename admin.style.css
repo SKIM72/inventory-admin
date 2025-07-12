@@ -269,3 +269,54 @@ th:nth-child(2), td:nth-child(2) {
     width: 70px;
     text-align: center;
 }
+
+/* 채널 선택 드롭다운 스타일 */
+#channel-switcher-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-right: 2rem;
+}
+
+#channel-switcher-container label {
+    color: #e9ecef;
+    font-weight: 500;
+}
+
+#channel-switcher {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid #6c757d;
+    background-color: #495057;
+    color: white;
+    font-size: 0.9rem;
+}
+
+/* ✅ 채널 관리 화면 스타일 추가 */
+.channel-management-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.channel-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.channel-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.channel-list-item:last-child {
+    border-bottom: none;
+}
+
+.channel-name {
+    font-weight: 500;
+}
