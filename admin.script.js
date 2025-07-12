@@ -1,15 +1,19 @@
 const { createClient } = supabase;
 const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
-// 로그인 및 관리자 권한 확인
+// 로그인 및 '승인된 사용자' 권한 확인 (강화된 버전)
 (async () => {
     const { data: { session }, error } = await supabaseClient.auth.getSession();
-    if (error || !session) {
-        alert('로그인이 필요합니다.');
+
+    // 1. 세션이 없거나, 2. 세션은 있지만 사용자가 승인되지 않았다면 즉시 튕겨냄
+    if (error || !session || session.user.user_metadata.is_approved !== true) {
+        await supabaseClient.auth.signOut(); // 만약을 위해 로그아웃 처리
+        alert('로그인이 필요하거나, 승인되지 않은 계정입니다.');
         window.location.href = 'login.html';
         return;
     }
 
+    // 이하 코드는 모두 승인된 사용자만 실행 가능
     const user = session.user;
     
     // 현재 로그인된 사용자 이메일 표시
@@ -18,7 +22,7 @@ const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 
         userEmailDisplay.textContent = user.email;
     }
 
-    // 관리자 권한 확인
+    // 최고 관리자 권한 확인
     const userManagementNav = document.getElementById('nav-users');
     if (user.email !== 'eowert72@gmail.com') {
         if(userManagementNav) userManagementNav.style.display = 'none';
@@ -91,7 +95,6 @@ async function populateChannelSwitcher() {
         return;
     }
     
-    // 이전에 선택했던 채널이 삭제되어 값이 변경된 경우, 혹은 첫 로딩 시에만 뷰를 새로고침
     if (!previousChannelId || previousChannelId !== channelSwitcher.value) {
          handleNavClick({ target: document.querySelector('nav button.active') || document.getElementById('nav-inventory') });
     }
