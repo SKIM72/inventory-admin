@@ -123,6 +123,21 @@
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
 
+        // ✅ Enter 키 이벤트 처리 로직 추가
+        emailInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                passwordInput.focus();
+            }
+        });
+
+        passwordInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                signupButton.click();
+            }
+        });
+
         signupButton.addEventListener('click', async () => {
             const { error } = await supabaseClient.auth.signUp({
                 email: emailInput.value,

@@ -123,16 +123,36 @@
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
 
+        // ✅ Enter 키 이벤트 처리 로직 추가
+        emailInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // 기본 동작(폼 제출) 방지
+                passwordInput.focus(); // 비밀번호 입력창으로 포커스 이동
+            }
+        });
+
+        passwordInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // 기본 동작(폼 제출) 방지
+                loginButton.click(); // 로그인 버튼 클릭
+            }
+        });
+
         loginButton.addEventListener('click', async () => {
-            const { error } = await supabaseClient.auth.signInWithPassword({
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
                 email: emailInput.value,
                 password: passwordInput.value,
             });
 
             if (error) {
                 alert('로그인 실패: ' + error.message);
-            } else {
-                window.location.href = 'index.html';
+            } else if (data.user) {
+                if (data.user.user_metadata.is_approved === true) {
+                    window.location.href = 'admin.html';
+                } else {
+                    await supabaseClient.auth.signOut();
+                    alert('아직 관리자의 승인을 받지 않은 계정입니다. 관리자에게 문의하세요.');
+                }
             }
         });
     </script>
