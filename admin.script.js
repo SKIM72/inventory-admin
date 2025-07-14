@@ -1,3 +1,4 @@
+// Supabase 클라이언트 설정
 const { createClient } = supabase;
 const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
@@ -10,20 +11,13 @@ const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 
         window.location.href = 'login.html';
         return;
     }
-
     const user = session.user;
-    
     const userEmailDisplay = document.getElementById('current-user-email');
-    if (userEmailDisplay) {
-        userEmailDisplay.textContent = user.email;
-    }
-
+    if (userEmailDisplay) { userEmailDisplay.textContent = user.email; }
     const userManagementNav = document.getElementById('nav-users');
     if (user.email !== 'eowert72@gmail.com') {
         if(userManagementNav) userManagementNav.style.display = 'none';
     }
-    
-    // ✅ 페이지 초기화 함수 호출 (초기 로드 플래그 전달)
     populateChannelSwitcher(true);
 })();
 
@@ -63,7 +57,6 @@ function refreshCurrentView() {
     }
 }
 
-// ✅ 채널 선택 드롭다운 채우기 (초기 로드인지 확인하는 파라미터 추가)
 async function populateChannelSwitcher(isInitialLoad = false) {
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     if (error) {
@@ -91,9 +84,10 @@ async function populateChannelSwitcher(isInitialLoad = false) {
         return;
     }
     
-    // ✅ 초기 로드가 아닐 경우에만, 채널 변경 시 현재 뷰를 새로고침
     if (!isInitialLoad && previousChannelId && previousChannelId !== channelSwitcher.value) {
          refreshCurrentView();
+    } else if (isInitialLoad) {
+        handleNavClick({ target: document.querySelector('nav button.active') || document.getElementById('nav-inventory') });
     }
 }
 
@@ -129,9 +123,15 @@ async function showInventoryStatus() {
 }
 
 async function showProductMaster() {
-    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
+    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('products').select('*').eq('channel_id', currentChannelId);
+    if (currentFilters.product_code) query = query.ilike('product_code', `%${currentFilters.product_code}%`);
     if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
     if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
     query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
@@ -142,9 +142,9 @@ async function showProductMaster() {
     if (data.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
-        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
         data.forEach((p, index) => {
-            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${index + 1}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${index + 1}</td><td>${p.product_code || ''}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
         });
         tableHTML += '</tbody></table>';
         tableContainer.innerHTML = tableHTML;
@@ -153,7 +153,11 @@ async function showProductMaster() {
 }
 
 async function showLocationMaster() {
-    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
+    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('locations').select('*').eq('channel_id', currentChannelId);
@@ -308,6 +312,126 @@ async function uploadData(tableName, onConflictColumn, file) {
     reader.readAsArrayBuffer(file);
 }
 
+async function uploadCornData(file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (rows.length < 3) {
+                alert('업로드할 데이터가 없습니다.');
+                return;
+            }
+            const dataRows = rows.slice(2);
+
+            const formattedData = dataRows.map(row => {
+                const product_code = row[2] ? String(row[2]).trim() : null;
+                const product_name = row[3] ? String(row[3]).trim() : null;
+                const barcode = row[10] ? String(row[10]).trim() : null;
+
+                if (!product_name || (!product_code && !barcode)) {
+                    return null;
+                }
+
+                return {
+                    product_code: product_code || barcode,
+                    barcode: barcode || product_code,
+                    product_name: product_name,
+                    channel_id: currentChannelId
+                };
+            }).filter(item => item !== null);
+
+            if (formattedData.length === 0) {
+                alert('추출할 유효한 데이터가 없습니다. C, D, K열을 확인해주세요.');
+                return;
+            }
+
+            const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode' });
+
+            if (error) { throw error; }
+
+            alert(`총 ${formattedData.length}개의 상품을 성공적으로 업로드했습니다.`);
+            refreshCurrentView();
+
+        } catch (error) {
+            alert('CORN 양식 업로드 실패: ' + error.message);
+            console.error(error);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function uploadCornLocations(file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (rows.length < 2) {
+                alert('업로드할 데이터가 없습니다.');
+                return;
+            }
+            const dataRows = rows.slice(1);
+
+            const locationCodes = dataRows.map(row => (row[2] ? String(row[2]).trim() : null)).filter(code => code);
+
+            if (locationCodes.length === 0) {
+                alert('추출할 유효한 로케이션 데이터가 없습니다. C열을 확인해주세요.');
+                return;
+            }
+            
+            const uniqueLocationCodesInFile = [...new Set(locationCodes)];
+            
+            const { data: existingLocations, error: selectError } = await supabaseClient
+                .from('locations')
+                .select('location_code')
+                .eq('channel_id', currentChannelId)
+                .in('location_code', uniqueLocationCodesInFile);
+
+            if (selectError) throw selectError;
+
+            const existingLocationSet = new Set(existingLocations.map(loc => loc.location_code));
+
+            const newLocationsToInsert = uniqueLocationCodesInFile.filter(code => !existingLocationSet.has(code));
+
+            if (newLocationsToInsert.length === 0) {
+                alert('업로드할 새로운 로케이션이 없습니다. (파일의 모든 로케이션이 이미 현재 채널에 존재합니다)');
+                return;
+            }
+
+            const formattedData = newLocationsToInsert.map(code => ({
+                location_code: code,
+                channel_id: currentChannelId
+            }));
+
+            const { error } = await supabaseClient.from('locations').insert(formattedData);
+
+            if (error) { throw error; }
+
+            alert(`총 ${formattedData.length}개의 새로운 로케이션을 성공적으로 업로드했습니다.`);
+            refreshCurrentView();
+
+        } catch (error) {
+            alert('CORN 로케이션 양식 업로드 실패: ' + error.message);
+            console.error(error);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+
 async function handleResetAndUpload(file) {
     if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
     if (!confirm(`현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?`)) return;
@@ -417,9 +541,11 @@ contentArea.addEventListener('click', async function(event) {
     let tableName, primaryKey, fileName;
 
     if (sectionId === 'products-section') {
-        tableName = 'products'; primaryKey = 'barcode'; fileName = 'products';
+        tableName = 'products';
+        primaryKey = 'barcode';
     } else if (sectionId === 'locations-section') {
-        tableName = 'locations'; primaryKey = 'location_code'; fileName = 'locations';
+        tableName = 'locations'; 
+        primaryKey = 'location_code';
     }
     
     if (target.classList.contains('search-button')) {
@@ -428,6 +554,7 @@ contentArea.addEventListener('click', async function(event) {
             currentFilters.location_code = document.getElementById('filter-location').value.trim();
             currentFilters.barcode = document.getElementById('filter-barcode').value.trim();
         } else if (sectionId === 'products-section') {
+            currentFilters.product_code = document.getElementById('filter-prod-code').value.trim();
             currentFilters.barcode = document.getElementById('filter-prod-barcode').value.trim();
             currentFilters.product_name = document.getElementById('filter-prod-name').value.trim();
         } else if (sectionId === 'locations-section') {
@@ -490,18 +617,32 @@ contentArea.addEventListener('click', async function(event) {
         const fileInput = document.getElementById('reset-upload-file');
         handleResetAndUpload(fileInput.files[0]);
     }
+    else if (target.id === 'upload-corn-button') {
+        const fileInput = document.getElementById('upload-corn-file');
+        uploadCornData(fileInput.files[0]);
+    }
+    else if (target.id === 'upload-corn-locations-button') {
+        const fileInput = document.getElementById('upload-corn-locations-file');
+        uploadCornLocations(fileInput.files[0]);
+    }
     else if (target.classList.contains('delete-selected')) {
         const tableMap = { 'inventory-section': 'inventory_scans', 'products-section': 'products', 'locations-section': 'locations' };
         const pkMap = { 'inventory-section': 'id', 'products-section': 'barcode', 'locations-section': 'location_code' };
         deleteSelected(tableMap[sectionId], pkMap[sectionId]);
     } 
     else if (target.classList.contains('download-template')) {
-        if (sectionId === 'products-section') downloadTemplateExcel(['barcode', 'product_name'], 'products_template.xlsx');
+        if (sectionId === 'products-section') downloadTemplateExcel(['product_code', 'barcode', 'product_name'], 'products_template.xlsx');
         else if (sectionId === 'locations-section') downloadTemplateExcel(['location_code'], 'locations_template.xlsx');
     }
     else if (target.classList.contains('upload-data')) {
         const fileInput = section.querySelector('.upload-file');
-        uploadData(tableName, primaryKey, fileInput.files[0]);
+        let onConflictKey = '';
+        if (sectionId === 'products-section') {
+            onConflictKey = 'barcode';
+        } else if (sectionId === 'locations-section') {
+            onConflictKey = 'location_code';
+        }
+        uploadData(tableName, onConflictKey, fileInput.files[0]);
     }
     else if (target.classList.contains('download-excel')) {
         alert('전체 데이터를 다운로드합니다. 데이터 양에 따라 시간이 걸릴 수 있습니다.');
