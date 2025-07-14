@@ -34,15 +34,11 @@ let currentFilters = {};
 let currentChannelId = localStorage.getItem('selectedAdminChannelId');
 
 
-// ✅ [수정] 홈페이지(채널별 요약) 표시 함수
 async function showHomepage() {
-    // 1. 모든 메뉴 버튼의 활성화 상태를 제거
     navButtons.forEach(btn => btn.classList.remove('active'));
 
-    // 2. 현재 선택된 채널의 이름을 가져와 제목으로 사용
     const selectedChannelName = channelSwitcher.options[channelSwitcher.selectedIndex]?.text || '선택된 채널';
 
-    // 3. 메인 컨텐츠 영역을 홈페이지 구조로 변경
     contentArea.innerHTML = `
         <div id="home-section">
             <h2>'${selectedChannelName}' 채널 실사 요약</h2>
@@ -53,7 +49,6 @@ async function showHomepage() {
     `;
     const summaryContainer = document.getElementById('global-summary-container');
 
-    // 4. 현재 선택된 채널의 데이터만 불러오도록 .eq() 필터 추가
     const { data, error } = await supabaseClient
         .from('inventory_scans')
         .select('expected_quantity, quantity')
@@ -64,7 +59,6 @@ async function showHomepage() {
         return;
     }
 
-    // 5. 데이터 계산 및 표시
     const totals = data.reduce((acc, item) => {
         acc.expected += item.expected_quantity || 0;
         acc.actual += item.quantity || 0;
@@ -122,7 +116,10 @@ async function fetchAllWithPagination(queryBuilder) {
 
 function refreshCurrentView() {
     const activeNav = document.querySelector('nav button.active');
-    if (!activeNav) return;
+    if (!activeNav) {
+        showHomepage();
+        return;
+    }
     switch (activeNav.id) {
         case 'nav-inventory': showInventoryStatus(); break;
         case 'nav-products': showProductMaster(); break;
@@ -214,9 +211,12 @@ async function showInventoryStatus() {
     let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
     if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
-    const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
-    const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
-    query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
+    
+    if (currentSort.column) {
+        const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
+        const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
+        query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
+    }
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
@@ -260,7 +260,9 @@ async function showProductMaster() {
     if (currentFilters.product_code) query = query.ilike('product_code', `%${currentFilters.product_code}%`);
     if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
     if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
-    query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    if (currentSort.column) {
+        query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    }
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
@@ -288,7 +290,9 @@ async function showLocationMaster() {
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('locations').select('*').eq('channel_id', currentChannelId);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    if (currentSort.column) {
+        query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    }
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
@@ -519,34 +523,19 @@ async function uploadCornLocations(file) {
             }
             
             const uniqueLocationCodesInFile = [...new Set(locationCodes)];
-            
-            const { data: existingLocations, error: selectError } = await supabaseClient
-                .from('locations')
-                .select('location_code')
-                .eq('channel_id', currentChannelId)
-                .in('location_code', uniqueLocationCodesInFile);
 
-            if (selectError) throw selectError;
-
-            const existingLocationSet = new Set(existingLocations.map(loc => loc.location_code));
-
-            const newLocationsToInsert = uniqueLocationCodesInFile.filter(code => !existingLocationSet.has(code));
-
-            if (newLocationsToInsert.length === 0) {
-                alert('업로드할 새로운 로케이션이 없습니다. (파일의 모든 로케이션이 이미 현재 채널에 존재합니다)');
-                return;
-            }
-
-            const formattedData = newLocationsToInsert.map(code => ({
+            const formattedData = uniqueLocationCodesInFile.map(code => ({
                 location_code: code,
                 channel_id: currentChannelId
             }));
 
-            const { error } = await supabaseClient.from('locations').insert(formattedData);
+            const { error } = await supabaseClient
+                .from('locations')
+                .upsert(formattedData, { onConflict: 'location_code, channel_id' });
 
             if (error) { throw error; }
 
-            alert(`총 ${formattedData.length}개의 새로운 로케이션을 성공적으로 업로드했습니다.`);
+            alert(`총 ${formattedData.length}개의 로케이션을 성공적으로 처리했습니다.`);
             refreshCurrentView();
 
         } catch (error) {
@@ -683,23 +672,48 @@ async function handleCornResetAndUpload(file) {
 }
 
 
+// ✅ [최종 수정] 대량 삭제 시에도 나눠서 처리하도록 개선된 함수
 async function deleteSelected(tableName, primaryKeyColumn) {
     const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
-    if (checkedBoxes.length === 0) { alert('삭제할 항목을 선택하세요.'); return; }
-    const idsToDelete = Array.from(checkedBoxes).map(box => box.dataset.id);
+    if (checkedBoxes.length === 0) {
+        alert('삭제할 항목을 선택하세요.');
+        return;
+    }
+
+    const idsToDelete = Array.from(checkedBoxes)
+        .map(box => box.dataset.id)
+        .filter(id => id);
+
+    if (idsToDelete.length === 0) {
+        alert('선택한 항목 중에 유효한 ID가 없습니다.');
+        return;
+    }
+
     if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
-        let query = supabaseClient.from(tableName).delete();
+        try {
+            const chunkSize = 500;
+            for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+                const chunk = idsToDelete.slice(i, i + chunkSize);
 
-        if (tableName === 'locations' || tableName === 'products') {
-            query = query.eq('channel_id', currentChannelId);
-        }
+                let query = supabaseClient.from(tableName).delete();
 
-        const { error } = await query.in(primaryKeyColumn, idsToDelete);
-        if (error) {
-            alert('삭제 실패: ' + error.message);
-        } else {
+                if (tableName === 'locations' || tableName === 'products') {
+                    query = query.eq('channel_id', currentChannelId);
+                }
+
+                const { error } = await query.in(primaryKeyColumn, chunk);
+
+                if (error) {
+                    throw error;
+                }
+            }
+
             alert('선택한 항목이 삭제되었습니다.');
             refreshCurrentView();
+
+        } catch (error) {
+            alert('삭제 실패: ' + error.message);
+            console.error(error);
         }
     }
 }
@@ -719,7 +733,7 @@ function handleNavClick(event) {
         currentSort = { column: 'barcode', direction: 'asc', defaultColumn: 'barcode', defaultDirection: 'asc', isDefault: true };
         showProductMaster();
     } else if (navId === 'nav-locations') {
-        currentSort = { column: 'location_code', direction: 'asc', defaultColumn: 'location_code', defaultDirection: 'asc', isDefault: `true` };
+        currentSort = { column: 'location_code', direction: 'asc', defaultColumn: 'location_code', defaultDirection: 'asc', isDefault: true };
         showLocationMaster();
     } else if (navId === 'nav-channels') {
         showChannelMaster();
@@ -990,17 +1004,14 @@ contentArea.addEventListener('keydown', function(e) {
 
 document.getElementById('home-button').addEventListener('click', showHomepage);
 
-// ✅ [수정] 채널 변경 시 홈 화면일 경우, 홈 화면을 새로고침하도록 로직 추가
 channelSwitcher.addEventListener('change', () => {
     currentChannelId = channelSwitcher.value;
     localStorage.setItem('selectedAdminChannelId', currentChannelId);
     
     const activeNav = document.querySelector('nav button.active');
     if (activeNav) {
-        // 다른 메뉴가 활성화 상태일 때는 해당 메뉴를 새로고침
         refreshCurrentView();
     } else {
-        // 활성화된 메뉴가 없으면 (즉, 홈 화면이면) 홈 화면을 새로고침
         showHomepage();
     }
 });
@@ -1011,6 +1022,7 @@ logoutButton.addEventListener('click', async () => {
         if (error) {
             alert('로그아웃 실패: ' + error.message);
         } else {
+            localStorage.removeItem('selectedAdminChannelId');
             window.location.href = 'login.html';
         }
     }
