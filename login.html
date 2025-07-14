@@ -147,7 +147,7 @@
                 alert('로그인 실패: ' + error.message);
             } else if (data.user) {
                 if (data.user.user_metadata.is_approved === true) {
-                    window.location.href = 'admin.html';
+                    window.location.href = 'index.html';
                 } else {
                     await supabaseClient.auth.signOut();
                     alert('아직 관리자의 승인을 받지 않은 계정입니다. 관리자에게 문의하세요.');
