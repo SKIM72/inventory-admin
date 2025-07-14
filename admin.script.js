@@ -37,6 +37,20 @@ let currentChannelId = localStorage.getItem('selectedAdminChannelId');
 async function showHomepage() {
     navButtons.forEach(btn => btn.classList.remove('active'));
 
+    if (channelSwitcher.options.length === 0) {
+        contentArea.innerHTML = `
+            <div id="home-section" class="content-section active">
+                <div class="card">
+                    <div class="card-body" style="text-align: center; padding: 3rem; font-size: 1.1rem; line-height: 1.8;">
+                        <p>생성되어 있는 채널이 없습니다.</p>
+                        <p>상단 메뉴의 <strong>[채널 관리]</strong> 탭을 클릭하여 채널을 추가해 주세요.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
     const selectedChannelName = channelSwitcher.options[channelSwitcher.selectedIndex]?.text || '선택된 채널';
 
     contentArea.innerHTML = `
@@ -150,8 +164,6 @@ async function populateChannelSwitcher() {
         currentChannelId = data[0].id;
         localStorage.setItem('selectedAdminChannelId', currentChannelId);
         channelSwitcher.value = currentChannelId;
-    } else {
-        contentArea.innerHTML = `<h2>채널이 없습니다. '채널 관리' 탭에서 채널을 생성해주세요.</h2>`;
     }
 }
 
@@ -672,7 +684,6 @@ async function handleCornResetAndUpload(file) {
 }
 
 
-// ✅ [최종 수정] 대량 삭제 시에도 나눠서 처리하도록 개선된 함수
 async function deleteSelected(tableName, primaryKeyColumn) {
     const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
     if (checkedBoxes.length === 0) {
@@ -682,7 +693,7 @@ async function deleteSelected(tableName, primaryKeyColumn) {
 
     const idsToDelete = Array.from(checkedBoxes)
         .map(box => box.dataset.id)
-        .filter(id => id);
+        .filter(id => id); 
 
     if (idsToDelete.length === 0) {
         alert('선택한 항목 중에 유효한 ID가 없습니다.');
