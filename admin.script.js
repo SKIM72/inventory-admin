@@ -18,7 +18,9 @@ const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 
     if (user.email !== 'eowert72@gmail.com') {
         if(userManagementNav) userManagementNav.style.display = 'none';
     }
-    populateChannelSwitcher(true);
+    
+    await populateChannelSwitcher();
+    showHomepage();
 })();
 
 
@@ -30,6 +32,53 @@ const logoutButton = document.getElementById('logout-button');
 let currentSort = {};
 let currentFilters = {};
 let currentChannelId = localStorage.getItem('selectedAdminChannelId');
+
+
+// ✅ [수정] 홈페이지(채널별 요약) 표시 함수
+async function showHomepage() {
+    // 1. 모든 메뉴 버튼의 활성화 상태를 제거
+    navButtons.forEach(btn => btn.classList.remove('active'));
+
+    // 2. 현재 선택된 채널의 이름을 가져와 제목으로 사용
+    const selectedChannelName = channelSwitcher.options[channelSwitcher.selectedIndex]?.text || '선택된 채널';
+
+    // 3. 메인 컨텐츠 영역을 홈페이지 구조로 변경
+    contentArea.innerHTML = `
+        <div id="home-section">
+            <h2>'${selectedChannelName}' 채널 실사 요약</h2>
+            <div id="global-summary-container" class="card" style="padding: 2rem; font-size: 1.2rem; display: flex; justify-content: space-around;">
+                <p>요약 정보를 불러오는 중...</p>
+            </div>
+        </div>
+    `;
+    const summaryContainer = document.getElementById('global-summary-container');
+
+    // 4. 현재 선택된 채널의 데이터만 불러오도록 .eq() 필터 추가
+    const { data, error } = await supabaseClient
+        .from('inventory_scans')
+        .select('expected_quantity, quantity')
+        .eq('channel_id', currentChannelId);
+
+    if (error) {
+        summaryContainer.innerHTML = `<p style="color:red;">현황 데이터를 불러오는 데 실패했습니다: ${error.message}</p>`;
+        return;
+    }
+
+    // 5. 데이터 계산 및 표시
+    const totals = data.reduce((acc, item) => {
+        acc.expected += item.expected_quantity || 0;
+        acc.actual += item.quantity || 0;
+        return acc;
+    }, { expected: 0, actual: 0 });
+
+    const progress = totals.expected > 0 ? (totals.actual / totals.expected) * 100 : 0;
+
+    summaryContainer.innerHTML = `
+        <span><strong>총 전산수량:</strong> ${totals.expected.toLocaleString()}</span>
+        <span><strong>총 실사수량:</strong> ${totals.actual.toLocaleString()}</span>
+        <span><strong>진척도:</strong> ${progress.toFixed(2)}%</span>
+    `;
+}
 
 async function updateGlobalProgress() {
     const progressContainer = document.querySelector('#admin-progress-container');
@@ -83,14 +132,13 @@ function refreshCurrentView() {
     }
 }
 
-async function populateChannelSwitcher(isInitialLoad = false) {
+async function populateChannelSwitcher() {
     const { data, error } = await supabaseClient.from('channels').select('*').order('id');
     if (error) {
         alert('채널 목록을 불러오는 데 실패했습니다.');
         return;
     }
 
-    const previousChannelId = channelSwitcher.value;
     channelSwitcher.innerHTML = '';
     data.forEach(channel => {
         const option = document.createElement('option');
@@ -107,15 +155,9 @@ async function populateChannelSwitcher(isInitialLoad = false) {
         channelSwitcher.value = currentChannelId;
     } else {
         contentArea.innerHTML = `<h2>채널이 없습니다. '채널 관리' 탭에서 채널을 생성해주세요.</h2>`;
-        return;
-    }
-    
-    if (!isInitialLoad && previousChannelId && previousChannelId !== channelSwitcher.value) {
-         refreshCurrentView();
-    } else if (isInitialLoad) {
-        handleNavClick({ target: document.querySelector('nav button.active') || document.getElementById('nav-inventory') });
     }
 }
+
 
 async function showInventoryStatus() {
     contentArea.innerHTML = `
@@ -436,7 +478,6 @@ async function uploadCornData(file) {
                 return;
             }
 
-            // ✅ [수정] onConflict 기준을 복합 키로 변경
             const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode, channel_id' });
 
             if (error) { throw error; }
@@ -649,7 +690,6 @@ async function deleteSelected(tableName, primaryKeyColumn) {
     if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
         let query = supabaseClient.from(tableName).delete();
 
-        // ✅ [수정] 로케이션 또는 상품 테이블을 삭제할 때 channel_id 조건을 추가합니다.
         if (tableName === 'locations' || tableName === 'products') {
             query = query.eq('channel_id', currentChannelId);
         }
@@ -679,7 +719,7 @@ function handleNavClick(event) {
         currentSort = { column: 'barcode', direction: 'asc', defaultColumn: 'barcode', defaultDirection: 'asc', isDefault: true };
         showProductMaster();
     } else if (navId === 'nav-locations') {
-        currentSort = { column: 'location_code', direction: 'asc', defaultColumn: 'location_code', defaultDirection: 'asc', isDefault: true };
+        currentSort = { column: 'location_code', direction: 'asc', defaultColumn: 'location_code', defaultDirection: 'asc', isDefault: `true` };
         showLocationMaster();
     } else if (navId === 'nav-channels') {
         showChannelMaster();
@@ -819,7 +859,6 @@ contentArea.addEventListener('click', async function(event) {
     else if (target.classList.contains('upload-data')) {
         const fileInput = section.querySelector('.upload-file');
         let onConflictKey = '';
-        // ✅ [수정] 상품과 로케이션 모두 복합 키를 onConflict 기준으로 사용
         if (sectionId === 'products-section') {
             onConflictKey = ['barcode', 'channel_id'];
         } else if (sectionId === 'locations-section') {
@@ -949,10 +988,21 @@ contentArea.addEventListener('keydown', function(e) {
     }
 });
 
+document.getElementById('home-button').addEventListener('click', showHomepage);
+
+// ✅ [수정] 채널 변경 시 홈 화면일 경우, 홈 화면을 새로고침하도록 로직 추가
 channelSwitcher.addEventListener('change', () => {
     currentChannelId = channelSwitcher.value;
     localStorage.setItem('selectedAdminChannelId', currentChannelId);
-    document.querySelector('nav button.active').click();
+    
+    const activeNav = document.querySelector('nav button.active');
+    if (activeNav) {
+        // 다른 메뉴가 활성화 상태일 때는 해당 메뉴를 새로고침
+        refreshCurrentView();
+    } else {
+        // 활성화된 메뉴가 없으면 (즉, 홈 화면이면) 홈 화면을 새로고침
+        showHomepage();
+    }
 });
 
 logoutButton.addEventListener('click', async () => {
