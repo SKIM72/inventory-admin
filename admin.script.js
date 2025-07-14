@@ -31,6 +31,32 @@ let currentSort = {};
 let currentFilters = {};
 let currentChannelId = localStorage.getItem('selectedAdminChannelId');
 
+async function updateGlobalProgress() {
+    const progressContainer = document.querySelector('#admin-progress-container');
+    if (!progressContainer) return;
+
+    const { data, error } = await supabaseClient
+        .from('inventory_scans')
+        .select('expected_quantity, quantity')
+        .eq('channel_id', currentChannelId);
+    
+    if (error) {
+        console.error('진행도 데이터를 불러오는 데 실패했습니다:', error);
+        return;
+    }
+
+    const totals = data.reduce((acc, item) => {
+        acc.expected += item.expected_quantity || 0;
+        acc.actual += item.quantity || 0;
+        return acc;
+    }, { expected: 0, actual: 0 });
+    
+    progressContainer.innerHTML = data.length > 0
+        ? `<b>총 전산수량:</b> ${totals.expected} | <b>총 실사수량:</b> ${totals.actual} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%`
+        : '';
+}
+
+
 async function fetchAllWithPagination(queryBuilder) {
     let allData = [];
     let page = 0;
@@ -92,11 +118,61 @@ async function populateChannelSwitcher(isInitialLoad = false) {
 }
 
 async function showInventoryStatus() {
-    contentArea.innerHTML = `<div id="inventory-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>실사 현황</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid"><div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}"><input type="text" id="filter-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div><div class="card"><div class="card-header">데이터 관리</div><div class="card-body"><button class="delete-selected btn-danger">선택 삭제</button></div></div><div class="card danger-zone"><div class="card-header">⚠️ 전체 초기화 (주의)</div><div class="card-body"><button id="reset-template-download" class="btn-secondary">초기화용 양식 다운로드</button><input type="file" id="reset-upload-file" accept=".xlsx, .xls"><button id="reset-upload-button" class="btn-danger">전체 초기화 및 업로드</button></div></div></div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    // [UI 복원] 컨트롤 영역 UI를 이전의 세로 배치 디자인으로 복원
+    contentArea.innerHTML = `
+    <div id="inventory-section" class="content-section active">
+        <div class="sticky-controls">
+            <div class="page-header">
+                <h2>실사 현황</h2>
+                <div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div>
+            </div>
+            <div class="control-grid">
+                <div class="card">
+                    <div class="card-header">필터 및 검색</div>
+                    <div class="card-body">
+                        <input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}">
+                        <input type="text" id="filter-barcode" class="filter-input" placeholder="바코드/상품코드 검색..." value="${currentFilters.barcode || ''}">
+                        <button class="search-button btn-primary">검색</button>
+                        <button class="reset-button btn-secondary">초기화</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">데이터 관리</div>
+                    <div class="card-body">
+                        <button class="delete-selected btn-danger">선택 삭제</button>
+                    </div>
+                </div>
+                 <div class="card danger-zone">
+                    <div class="card-header">⚠️ 전체 초기화 (주의)</div>
+                    <div class="card-body" style="flex-direction: column; align-items: stretch;">
+                        <div>
+                            <strong>표준 양식</strong>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;">
+                               <button id="reset-template-download" class="btn-secondary">양식 다운로드</button>
+                               <input type="file" id="reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
+                               <button id="reset-upload-button" class="btn-danger">초기화 및 업로드</button>
+                            </div>
+                        </div>
+                        <hr style="width: 100%; margin: 1rem 0; border-top: 1px solid var(--border-color); border-bottom: 0;">
+                        <div>
+                            <strong>CORN 양식</strong>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;" title="CORN 재고 > 재고 조회 > 재고 현황 로케이션/상품별/LOT별 메뉴에서 엑셀다운">
+                                <input type="file" id="corn-reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
+                                <button id="corn-reset-upload-button" class="btn-danger">CORN 양식으로 초기화</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="admin-progress-container" style="padding-top: 1rem;"></div>
+        </div>
+        <div class="table-wrapper"><div class="table-container">불러오는 중...</div></div>
+    </div>`;
+
     const tableContainer = contentArea.querySelector('.table-container');
-    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_name)`).eq('channel_id', currentChannelId);
+    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
+    if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`);
     const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
     const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
     query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
@@ -104,17 +180,26 @@ async function showInventoryStatus() {
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
     
-    const progressContainer = contentArea.querySelector('#admin-progress-container');
-    const totals = data.reduce((acc, item) => { acc.expected += item.expected_quantity || 0; acc.actual += item.quantity || 0; return acc; }, { expected: 0, actual: 0 });
-    progressContainer.innerHTML = data.length > 0 ? `<div style="padding-bottom: 1rem;"><b>총 전산수량:</b> ${totals.expected} | <b>총 실사수량:</b> ${totals.actual} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%</div>` : '';
+    updateGlobalProgress();
 
     if (data.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
-        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="products.product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
         data.forEach((item, index) => {
             const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
-            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td><td>${index + 1}</td><td>${item.location_code}</td><td>${item.barcode}</td><td>${item.products ? item.products.product_name : 'N/A'}</td><td>${expected}</td><td>${actual}</td><td>${diff}</td><td>${new Date(item.created_at).toLocaleString()}</td></tr>`;
+            tableHTML += `<tr>
+                <td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td>
+                <td>${index + 1}</td>
+                <td>${item.location_code}</td>
+                <td>${item.products ? item.products.product_code : 'N/A'}</td>
+                <td>${item.barcode}</td>
+                <td>${item.products ? item.products.product_name : 'N/A'}</td>
+                <td>${expected}</td>
+                <td class="editable-quantity" data-scan-id="${item.id}">${actual}</td>
+                <td>${diff}</td>
+                <td class="scan-time">${new Date(item.created_at).toLocaleString()}</td>
+            </tr>`;
         });
         tableHTML += '</tbody></table>';
         tableContainer.innerHTML = tableHTML;
@@ -126,7 +211,7 @@ async function showProductMaster() {
     contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
     <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
     <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN 기준정보 > 상품관리 > 상품정보조회 메뉴에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
     </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
@@ -156,7 +241,7 @@ async function showLocationMaster() {
     contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
     <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
     <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN 기준정보 > 물류센관리 > 로케이션 관리 메뉴 > 복수 탭에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
     </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
@@ -473,6 +558,90 @@ async function handleResetAndUpload(file) {
     }
 }
 
+async function handleCornResetAndUpload(file) {
+    if (!file) {
+        alert('업로드할 CORN 양식 파일을 선택하세요.');
+        return;
+    }
+    if (!confirm(`[CORN 양식] 현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제하고 CORN 양식으로 새로 업로드합니다. 계속하시겠습니까?`)) {
+        return;
+    }
+    if (!confirm("이 작업은 되돌릴 수 없습니다. 정말로 진행하시겠습니까?")) {
+        return;
+    }
+
+    try {
+        const { error: deleteError } = await supabaseClient.from('inventory_scans').delete().eq('channel_id', currentChannelId);
+        if (deleteError) {
+            throw new Error('기존 데이터 삭제 중 오류 발생: ' + deleteError.message);
+        }
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (rows.length < 2) {
+                     alert('업로드할 데이터가 없습니다. (제목 행 제외)');
+                     return;
+                }
+
+                const dataRows = rows.slice(1);
+
+                const dataToInsert = dataRows.map(row => {
+                    if (!row || (row[2] && String(row[2]).includes('합계'))) {
+                        return null;
+                    }
+                    
+                    const location = row[3] ? String(row[3]).trim() : null;
+                    const barcode = row[5] ? String(row[5]).trim() : null;
+                    const quantity = row[8];
+
+                    if (!location || !barcode) {
+                        return null;
+                    }
+
+                    return {
+                        location_code: location,
+                        barcode: barcode,
+                        expected_quantity: Number(quantity) || 0,
+                        quantity: 0,
+                        channel_id: currentChannelId
+                    };
+                }).filter(Boolean);
+
+
+                if (dataToInsert.length === 0) {
+                    alert("업로드할 유효한 데이터가 없습니다. 엑셀 파일의 D, F, I열 데이터와 '합계' 행을 확인해주세요.");
+                    return;
+                }
+
+                const { error: insertError } = await supabaseClient.from('inventory_scans').insert(dataToInsert);
+                if (insertError) {
+                    throw insertError;
+                }
+                
+                alert(`CORN 양식을 통해 총 ${dataToInsert.length}개의 데이터를 성공적으로 초기화 및 업로드했습니다!`);
+                refreshCurrentView();
+
+            } catch (uploadError) {
+                alert('새 데이터 업로드 실패: ' + uploadError.message);
+                console.error(uploadError);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (error) {
+        alert('작업 실패: ' + error.message);
+        console.error(error);
+    }
+}
+
+
 async function deleteSelected(tableName, primaryKeyColumn) {
     const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
     if (checkedBoxes.length === 0) { alert('삭제할 항목을 선택하세요.'); return; }
@@ -543,9 +712,11 @@ contentArea.addEventListener('click', async function(event) {
     if (sectionId === 'products-section') {
         tableName = 'products';
         primaryKey = 'barcode';
+        fileName = 'products';
     } else if (sectionId === 'locations-section') {
         tableName = 'locations'; 
         primaryKey = 'location_code';
+        fileName = 'locations';
     }
     
     if (target.classList.contains('search-button')) {
@@ -617,6 +788,10 @@ contentArea.addEventListener('click', async function(event) {
         const fileInput = document.getElementById('reset-upload-file');
         handleResetAndUpload(fileInput.files[0]);
     }
+    else if (target.id === 'corn-reset-upload-button') {
+        const fileInput = document.getElementById('corn-reset-upload-file');
+        handleCornResetAndUpload(fileInput.files[0]);
+    }
     else if (target.id === 'upload-corn-button') {
         const fileInput = document.getElementById('upload-corn-file');
         uploadCornData(fileInput.files[0]);
@@ -649,12 +824,18 @@ contentArea.addEventListener('click', async function(event) {
         const tableToDownload = sectionId === 'inventory-section' ? 'inventory_scans' : tableName;
         
         if (tableToDownload === 'inventory_scans') {
-             const query = supabaseClient.from('inventory_scans').select(`*, products(product_name)`).eq('channel_id', currentChannelId);
+             const query = supabaseClient.from('inventory_scans').select(`*, products(product_code, product_name)`).eq('channel_id', currentChannelId);
              const { data: inventoryData, error } = await fetchAllWithPagination(query);
              if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
              const flattenedData = inventoryData.map((item, index) => ({
-                'No.': index + 1, '로케이션': item.location_code, '바코드': item.barcode, '상품명': item.products ? item.products.product_name : 'N/A',
-                '전산수량': item.expected_quantity || 0, '실사수량': item.quantity || 0, '차이': (item.quantity || 0) - (item.expected_quantity || 0),
+                'No.': index + 1,
+                '로케이션': item.location_code,
+                '상품코드': item.products ? item.products.product_code : 'N/A',
+                '바코드': item.barcode,
+                '상품명': item.products ? item.products.product_name : 'N/A',
+                '전산수량': item.expected_quantity || 0,
+                '실사수량': item.quantity || 0,
+                '차이': (item.quantity || 0) - (item.expected_quantity || 0),
                 '마지막 스캔': new Date(item.created_at).toLocaleString()
             }));
             downloadExcel(flattenedData, 'inventory_status.xlsx');
@@ -667,6 +848,79 @@ contentArea.addEventListener('click', async function(event) {
         }
     }
 });
+
+contentArea.addEventListener('dblclick', function(e) {
+    const cell = e.target;
+    if (!cell.classList.contains('editable-quantity') || cell.querySelector('input')) {
+        return;
+    }
+
+    const scanId = cell.dataset.scanId;
+    const originalValue = cell.textContent.trim();
+    
+    cell.innerHTML = `<input type="number" class="quantity-edit-input" value="${originalValue}" style="width: 80px; text-align: right;">`;
+    
+    const input = cell.querySelector('input');
+    input.focus();
+    input.select();
+
+    const handleSave = async () => {
+        const newValue = input.value.trim();
+
+        if (newValue === originalValue) {
+            cell.textContent = originalValue;
+            return;
+        }
+
+        if (newValue === '' || isNaN(newValue) || Number(newValue) < 0) {
+            alert('유효한 숫자를 입력하세요.');
+            cell.textContent = originalValue;
+            return;
+        }
+
+        try {
+            const { error } = await supabaseClient
+                .from('inventory_scans')
+                .update({ 
+                    quantity: Number(newValue),
+                    created_at: new Date().toISOString()
+                })
+                .eq('id', scanId);
+            
+            if (error) throw error;
+
+            cell.textContent = newValue;
+            const row = cell.closest('tr');
+            if (row) {
+                row.querySelector('.scan-time').textContent = new Date().toLocaleString();
+                const expectedQty = parseInt(row.cells[6].textContent, 10);
+                const diffCell = row.cells[8];
+                diffCell.textContent = Number(newValue) - expectedQty;
+            }
+            
+            alert('수량이 성공적으로 수정되었습니다.');
+            updateGlobalProgress();
+
+        } catch (error) {
+            alert('수량 업데이트 실패: ' + error.message);
+            cell.textContent = originalValue;
+        }
+    };
+
+    input.addEventListener('blur', handleSave, { once: true });
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            input.blur();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            input.removeEventListener('blur', handleSave);
+            cell.textContent = originalValue;
+        }
+    });
+});
+
 
 contentArea.addEventListener('change', function(event) {
     if (event.target.classList.contains('select-all-checkbox')) {
