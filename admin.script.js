@@ -118,7 +118,6 @@ async function populateChannelSwitcher(isInitialLoad = false) {
 }
 
 async function showInventoryStatus() {
-    // [UI 복원] 컨트롤 영역 UI를 이전의 세로 배치 디자인으로 복원
     contentArea.innerHTML = `
     <div id="inventory-section" class="content-section active">
         <div class="sticky-controls">
@@ -172,7 +171,7 @@ async function showInventoryStatus() {
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`);
+    if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
     const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
     const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
     query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
@@ -437,7 +436,8 @@ async function uploadCornData(file) {
                 return;
             }
 
-            const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode' });
+            // ✅ [수정] onConflict 기준을 복합 키로 변경
+            const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode, channel_id' });
 
             if (error) { throw error; }
 
@@ -647,7 +647,14 @@ async function deleteSelected(tableName, primaryKeyColumn) {
     if (checkedBoxes.length === 0) { alert('삭제할 항목을 선택하세요.'); return; }
     const idsToDelete = Array.from(checkedBoxes).map(box => box.dataset.id);
     if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
-        const { error } = await supabaseClient.from(tableName).delete().in(primaryKeyColumn, idsToDelete);
+        let query = supabaseClient.from(tableName).delete();
+
+        // ✅ [수정] 로케이션 또는 상품 테이블을 삭제할 때 channel_id 조건을 추가합니다.
+        if (tableName === 'locations' || tableName === 'products') {
+            query = query.eq('channel_id', currentChannelId);
+        }
+
+        const { error } = await query.in(primaryKeyColumn, idsToDelete);
         if (error) {
             alert('삭제 실패: ' + error.message);
         } else {
@@ -812,10 +819,11 @@ contentArea.addEventListener('click', async function(event) {
     else if (target.classList.contains('upload-data')) {
         const fileInput = section.querySelector('.upload-file');
         let onConflictKey = '';
+        // ✅ [수정] 상품과 로케이션 모두 복합 키를 onConflict 기준으로 사용
         if (sectionId === 'products-section') {
-            onConflictKey = 'barcode';
+            onConflictKey = ['barcode', 'channel_id'];
         } else if (sectionId === 'locations-section') {
-            onConflictKey = 'location_code';
+            onConflictKey = ['location_code', 'channel_id'];
         }
         uploadData(tableName, onConflictKey, fileInput.files[0]);
     }
