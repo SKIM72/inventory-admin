@@ -228,7 +228,8 @@ async function showInventoryStatus() {
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
     if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
     
-    if (currentSort.column) {
+    // '차이' 열로 정렬하는 경우 DB 정렬을 건너뜁니다.
+    if (currentSort.column && currentSort.column !== 'difference') {
         const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
         const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
         query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
@@ -237,12 +238,21 @@ async function showInventoryStatus() {
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
     
+    // '차이' 열로 정렬하는 경우 클라이언트 측에서 정렬을 수행합니다.
+    if (currentSort.column === 'difference') {
+        data.sort((a, b) => {
+            const diffA = (a.quantity || 0) - (a.expected_quantity || 0);
+            const diffB = (b.quantity || 0) - (b.expected_quantity || 0);
+            return currentSort.direction === 'asc' ? diffA - diffB : diffB - diffA;
+        });
+    }
+    
     updateGlobalProgress();
 
     if (data.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
-        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="products.product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th>차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="products.product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th class="sortable" data-column="difference">차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
         data.forEach((item, index) => {
             const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
             tableHTML += `<tr>
