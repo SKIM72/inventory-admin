@@ -63,10 +63,12 @@ async function showHomepage() {
     `;
     const summaryContainer = document.getElementById('global-summary-container');
 
-    const { data, error } = await supabaseClient
+    const query = supabaseClient
         .from('inventory_scans')
         .select('expected_quantity, quantity')
         .eq('channel_id', currentChannelId);
+        
+    const { data, error } = await fetchAllWithPagination(query);
 
     if (error) {
         summaryContainer.innerHTML = `<p style="color:red;">현황 데이터를 불러오는 데 실패했습니다: ${error.message}</p>`;
@@ -92,10 +94,12 @@ async function updateGlobalProgress() {
     const progressContainer = document.querySelector('#admin-progress-container');
     if (!progressContainer) return;
 
-    const { data, error } = await supabaseClient
+    const query = supabaseClient
         .from('inventory_scans')
         .select('expected_quantity, quantity')
         .eq('channel_id', currentChannelId);
+
+    const { data, error } = await fetchAllWithPagination(query);
     
     if (error) {
         console.error('진행도 데이터를 불러오는 데 실패했습니다:', error);
@@ -109,7 +113,7 @@ async function updateGlobalProgress() {
     }, { expected: 0, actual: 0 });
     
     progressContainer.innerHTML = data.length > 0
-        ? `<b>총 전산수량:</b> ${totals.expected} | <b>총 실사수량:</b> ${totals.actual} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%`
+        ? `<b>총 전산수량:</b> ${totals.expected.toLocaleString()} | <b>총 실사수량:</b> ${totals.actual.toLocaleString()} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%`
         : '';
 }
 
