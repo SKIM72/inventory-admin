@@ -66,7 +66,8 @@ async function showHomepage() {
     const query = supabaseClient
         .from('inventory_scans')
         .select('expected_quantity, quantity')
-        .eq('channel_id', currentChannelId);
+        .eq('channel_id', currentChannelId)
+        .is('deleted_at', null);
         
     const { data, error } = await fetchAllWithPagination(query);
 
@@ -97,7 +98,8 @@ async function updateGlobalProgress() {
     const query = supabaseClient
         .from('inventory_scans')
         .select('expected_quantity, quantity')
-        .eq('channel_id', currentChannelId);
+        .eq('channel_id', currentChannelId)
+        .is('deleted_at', null);
 
     const { data, error } = await fetchAllWithPagination(query);
     
@@ -224,7 +226,7 @@ async function showInventoryStatus() {
     </div>`;
 
     const tableContainer = contentArea.querySelector('.table-container');
-    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId);
+    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
     if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
     if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
     
@@ -579,7 +581,12 @@ async function handleResetAndUpload(file) {
     if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
     try {
-        const { error: deleteError } = await supabaseClient.from('inventory_scans').delete().eq('channel_id', currentChannelId);
+        const { error: deleteError } = await supabaseClient
+            .from('inventory_scans')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('channel_id', currentChannelId)
+            .is('deleted_at', null);
+            
         if (deleteError) throw new Error('데이터 삭제 중 오류 발생: ' + deleteError.message);
         
         const reader = new FileReader();
@@ -627,7 +634,12 @@ async function handleCornResetAndUpload(file) {
     }
 
     try {
-        const { error: deleteError } = await supabaseClient.from('inventory_scans').delete().eq('channel_id', currentChannelId);
+        const { error: deleteError } = await supabaseClient
+            .from('inventory_scans')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('channel_id', currentChannelId)
+            .is('deleted_at', null);
+
         if (deleteError) {
             throw new Error('기존 데이터 삭제 중 오류 발생: ' + deleteError.message);
         }
@@ -720,7 +732,14 @@ async function deleteSelected(tableName, primaryKeyColumn) {
             for (let i = 0; i < idsToDelete.length; i += chunkSize) {
                 const chunk = idsToDelete.slice(i, i + chunkSize);
 
-                let query = supabaseClient.from(tableName).delete();
+                let query;
+                if (tableName === 'inventory_scans') {
+                    query = supabaseClient
+                        .from(tableName)
+                        .update({ deleted_at: new Date().toISOString() });
+                } else {
+                    query = supabaseClient.from(tableName).delete();
+                }
 
                 if (tableName === 'locations' || tableName === 'products') {
                     query = query.eq('channel_id', currentChannelId);
@@ -910,7 +929,7 @@ contentArea.addEventListener('click', async function(event) {
         const tableToDownload = sectionId === 'inventory-section' ? 'inventory_scans' : tableName;
         
         if (tableToDownload === 'inventory_scans') {
-             const query = supabaseClient.from('inventory_scans').select(`*, products(product_code, product_name)`).eq('channel_id', currentChannelId);
+             const query = supabaseClient.from('inventory_scans').select(`*, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
              const { data: inventoryData, error } = await fetchAllWithPagination(query);
              if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
              const flattenedData = inventoryData.map((item, index) => ({
