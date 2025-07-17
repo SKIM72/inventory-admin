@@ -59,6 +59,9 @@ async function showHomepage() {
             <div id="global-summary-container" class="card" style="padding: 2rem; font-size: 1.2rem; display: flex; justify-content: space-around;">
                 <p>요약 정보를 불러오는 중...</p>
             </div>
+            <div class="card" style="margin-top: 1.5rem; padding: 1.5rem; height: 40vh;">
+                <canvas id="inventory-summary-chart"></canvas>
+            </div>
         </div>
     `;
     const summaryContainer = document.getElementById('global-summary-container');
@@ -89,6 +92,52 @@ async function showHomepage() {
         <span><strong>총 실사수량:</strong> ${totals.actual.toLocaleString()}</span>
         <span><strong>진척도:</strong> ${progress.toFixed(2)}%</span>
     `;
+
+    // --- 차트 생성 로직 ---
+    const remaining = totals.expected - totals.actual;
+    const chartCanvas = document.getElementById('inventory-summary-chart');
+
+    const existingChart = Chart.getChart(chartCanvas);
+    if (existingChart) {
+        existingChart.destroy();
+    }
+
+    new Chart(chartCanvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['실사 완료 수량', '미실사 수량'],
+            datasets: [{
+                label: '수량',
+                data: [totals.actual, remaining > 0 ? remaining : 0],
+                backgroundColor: [
+                    '#007bff',
+                    '#e9ecef'
+                ],
+                borderColor: [
+                    '#007bff',
+                    '#e9ecef'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                },
+                title: {
+                    display: true,
+                    text: '실사 진행 현황',
+                    font: {
+                        size: 16
+                    }
+                }
+            },
+            cutout: '60%'
+        }
+    });
 }
 
 async function updateGlobalProgress() {
