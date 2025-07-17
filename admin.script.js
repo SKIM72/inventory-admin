@@ -180,7 +180,10 @@ async function showInventoryStatus() {
         <div class="sticky-controls">
             <div class="page-header">
                 <h2>실사 현황</h2>
-                <div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                </div>
             </div>
             <div class="control-grid">
                 <div class="card">
@@ -277,7 +280,7 @@ async function showInventoryStatus() {
 }
 
 async function showProductMaster() {
-    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
     <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
     <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
     <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
@@ -309,7 +312,7 @@ async function showProductMaster() {
 }
 
 async function showLocationMaster() {
-    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
     <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
     <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
     <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
@@ -341,7 +344,12 @@ async function showLocationMaster() {
 async function showChannelMaster() {
     contentArea.innerHTML = `
         <div id="channels-section" class="content-section active">
-            <div class="page-header"><h2>채널 관리</h2></div>
+            <div class="page-header">
+                <h2>채널 관리</h2>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                </div>
+            </div>
             <div class="channel-management-grid">
                 <div class="card">
                     <div class="card-header">새 채널 추가</div>
@@ -377,7 +385,12 @@ async function showChannelMaster() {
 async function showUserManagement() {
     contentArea.innerHTML = `
         <div id="users-section" class="content-section active">
-            <div class="page-header"><h2>사용자 관리</h2></div>
+            <div class="page-header">
+                <h2>사용자 관리</h2>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                </div>
+            </div>
             <div class="card">
                 <div class="card-header">사용자 목록</div>
                 <div id="user-list-container" class="card-body" style="flex-direction: column; align-items: stretch; padding: 0;">
@@ -660,28 +673,46 @@ async function handleCornResetAndUpload(file) {
                 }
 
                 const dataRows = rows.slice(1);
+                
+                // 데이터를 집계하기 위한 객체
+                const aggregatedData = {};
 
-                const dataToInsert = dataRows.map(row => {
+                dataRows.forEach(row => {
+                    // '합계' 행이거나 유효하지 않은 행은 건너뜁니다.
                     if (!row || (row[2] && String(row[2]).includes('합계'))) {
-                        return null;
+                        return;
                     }
                     
-                    const location = row[3] ? String(row[3]).trim() : null;
-                    const barcode = row[5] ? String(row[5]).trim() : null;
-                    const quantity = row[8];
+                    const location = row[3] ? String(row[3]).trim() : null; // D열: 로케이션
+                    const barcode = row[5] ? String(row[5]).trim() : null;  // F열: 바코드
+                    const quantity = row[8]; // I열: 현재고
 
+                    // 필수 데이터가 없는 경우 건너뜁니다.
                     if (!location || !barcode) {
-                        return null;
+                        return;
                     }
+                    
+                    // 고유 키 생성 (로케이션 + 바코드)
+                    const key = `${location}___${barcode}`;
+                    const currentQuantity = Number(quantity) || 0;
 
-                    return {
-                        location_code: location,
-                        barcode: barcode,
-                        expected_quantity: Number(quantity) || 0,
-                        quantity: 0,
-                        channel_id: currentChannelId
-                    };
-                }).filter(Boolean);
+                    if (aggregatedData[key]) {
+                        // 이미 키가 존재하면 수량을 더합니다.
+                        aggregatedData[key].expected_quantity += currentQuantity;
+                    } else {
+                        // 키가 없으면 새로 추가합니다.
+                        aggregatedData[key] = {
+                            location_code: location,
+                            barcode: barcode,
+                            expected_quantity: currentQuantity,
+                            quantity: 0,
+                            channel_id: currentChannelId
+                        };
+                    }
+                });
+                
+                // 집계된 객체를 배열로 변환합니다.
+                const dataToInsert = Object.values(aggregatedData);
 
 
                 if (dataToInsert.length === 0) {
@@ -790,6 +821,11 @@ contentArea.addEventListener('click', async function(event) {
     const target = event.target;
     const section = target.closest('.content-section');
     if (!section) return;
+
+    if (target.classList.contains('refresh-view-button')) {
+        refreshCurrentView();
+        return;
+    }
 
     if (target.classList.contains('sortable')) {
         const newSortColumn = target.dataset.column;
