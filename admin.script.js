@@ -33,7 +33,6 @@ let currentProductMasterData = [];
     
     userEmailDisplay.textContent = session.user.email;
     
-    // [수정] 슈퍼 관리자(eowert72@gmail.com) 전용 메뉴는 '사용자 관리'만 해당되도록 변경
     const superAdminOnlyButtons = ['nav-users']; 
     superAdminOnlyButtons.forEach(id => {
         const button = document.getElementById(id);
@@ -194,7 +193,7 @@ contentArea.addEventListener('click', function(e) {
     }
     if (target.classList.contains('sortable')) {
         const column = target.dataset.column;
-        if (currentSort.column === column) { currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc'; } 
+        if (currentSort.column === column) { currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc'; }
         else { currentSort.column = column; currentSort.direction = 'asc'; }
         renderProductTable();
     }
@@ -240,7 +239,7 @@ async function showBatchSummaryModal(date) {
         });
 
         if (error) throw error;
-        
+
         if (data.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem;">해당 날짜에 출고 차수가 없습니다.</td></tr>`;
             return;
@@ -249,7 +248,7 @@ async function showBatchSummaryModal(date) {
         let tableHtml = '';
         data.forEach(batch => {
             const progress = (batch.order_count > 0) ? (batch.completed_count / batch.order_count * 100) : 0;
-            
+
             let progressHtml;
             if (progress > 0) {
                 progressHtml = `
@@ -303,7 +302,7 @@ async function showChannelManagement() {
                 <ul id="channel-list" class="management-list"></ul>
             </div>
         </div>`;
-    
+
     const newChannelInput = contentArea.querySelector('#new-channel-name');
     newChannelInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -380,7 +379,7 @@ async function showBatchManagement() {
             <div id="batch-details-section" class="table-wrapper">
             </div>
         </div>`;
-    
+
     const batchInput = contentArea.querySelector('#batch-number-input');
     batchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -403,13 +402,13 @@ async function loadBatchDetails() {
         summarySection.innerHTML = '';
         return;
     }
-    
+
     detailsSection.innerHTML = `<p style="text-align:center; padding:2rem;">불러오는 중...</p>`;
     summarySection.innerHTML = '';
     currentBatchDetailsData = [];
-    
+
     const { data: batchData } = await supabaseClient.from('picking_batches').select('id, status').eq('channel_id', currentChannelId).eq('batch_date', date).eq('batch_number', batchNumber).single();
-    
+
     const batchId = batchData ? batchData.id : null;
     const batchStatus = batchData ? batchData.status : '신규';
 
@@ -441,7 +440,7 @@ async function loadBatchDetails() {
                 .order('order_number', { ascending: true });
 
             if (ordersError) throw ordersError;
-            
+
             const allItems = [];
             let totalQuantity = 0, totalPicked = 0, orderCount = 0;
 
@@ -458,7 +457,7 @@ async function loadBatchDetails() {
                     }
                 });
             }
-            
+
             currentBatchDetailsData = allItems;
 
             const summaryHTML = `
@@ -469,7 +468,7 @@ async function loadBatchDetails() {
                     </div>
                 </div>`;
             summarySection.innerHTML = summaryHTML;
-            
+
             let tableHTML;
             if (allItems.length > 0) {
                  tableHTML = `
@@ -549,13 +548,13 @@ async function handleStandardOrderUpload(target) {
             const workbook = XLSX.read(excelData, { type: 'array' });
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
             if (jsonData.length === 0) throw new Error('엑셀 파일에 데이터가 없습니다.');
-            
+
             const orders = {};
             jsonData.forEach(row => {
                 if (!row.order_number) return;
                 const orderKey = row.order_number.toString();
-                if (!orders[orderKey]) { 
-                    orders[orderKey] = { recipient: row.recipient || '', address: row.destination_address, items: [], total_expected: 0 }; 
+                if (!orders[orderKey]) {
+                    orders[orderKey] = { recipient: row.recipient || '', address: row.destination_address, items: [], total_expected: 0 };
                 }
                 const quantity = Number(row.expected_quantity) || 0;
                 orders[orderKey].items.push({ barcode: row.barcode.toString(), product_name: row.product_name, expected_quantity: quantity });
@@ -565,9 +564,9 @@ async function handleStandardOrderUpload(target) {
             await supabaseClient.from('picking_orders').delete().eq('batch_id', batchData.id);
             for (const orderKey in orders) {
                 const orderData = orders[orderKey];
-                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({ 
-                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient, 
-                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected 
+                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({
+                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient,
+                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected
                 }).select().single();
                 if (orderError) throw orderError;
                 const itemsToInsert = orderData.items.map(item => ({ ...item, order_id: insertedOrder.id }));
@@ -591,7 +590,7 @@ async function handleCornOrderUpload(target) {
             const { data: products } = await supabaseClient.from('products').select('product_code, barcode, product_name').eq('channel_id', currentChannelId);
             if (!products || products.length === 0) throw new Error('상품 마스터에 데이터가 없습니다.');
             const productMap = new Map(products.map(p => [p.product_code, p]));
-            
+
             let { data: batchData, error: selectError } = await supabaseClient
                 .from('picking_batches').select('id').eq('channel_id', currentChannelId).eq('batch_date', date).eq('batch_number', batch).single();
             if (selectError && selectError.code !== 'PGRST116') throw selectError;
@@ -613,14 +612,14 @@ async function handleCornOrderUpload(target) {
             dataRows.forEach(row => {
                 const orderKey = row[1];
                 if (!orderKey) return;
-                
+
                 const productCode = row[28];
                 const productInfo = productMap.get(productCode);
                 if (!productInfo) {
                     notFoundCodes.add(productCode);
                     return;
                 }
-                
+
                 if (!orders[orderKey]) {
                     orders[orderKey] = {
                         recipient: row[17] || '',
@@ -632,7 +631,7 @@ async function handleCornOrderUpload(target) {
 
                 const quantity = Number(row[34]) || 0;
                 const barcode = productInfo.barcode;
-                
+
                 const existingItem = orders[orderKey].items.find(item => item.barcode === barcode);
 
                 if (existingItem) {
@@ -650,9 +649,9 @@ async function handleCornOrderUpload(target) {
             await supabaseClient.from('picking_orders').delete().eq('batch_id', batchData.id);
             for (const orderKey in orders) {
                 const orderData = orders[orderKey];
-                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({ 
-                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient, 
-                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected 
+                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({
+                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient,
+                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected
                 }).select().single();
                 if(orderError) throw orderError;
                 const itemsToInsert = orderData.items.map(item => ({ ...item, order_id: insertedOrder.id }));
@@ -670,8 +669,8 @@ async function handleCornOrderUpload(target) {
 async function handleDeleteBatch(batchId) {
     if (!batchId || !confirm('이 차수의 모든 출고 데이터가 삭제됩니다. 계속하시겠습니까?')) return;
     const { error } = await supabaseClient.from('picking_batches').delete().eq('id', batchId);
-    if (error) { alert('삭제 실패: ' + error.message); } 
-    else { 
+    if (error) { alert('삭제 실패: ' + error.message); }
+    else {
         alert('삭제되었습니다.');
         contentArea.querySelector('#batch-details-section').innerHTML = '';
         contentArea.querySelector('#batch-upload-section').innerHTML = '';
@@ -749,11 +748,11 @@ async function loadPickingOrdersForStatus(batchId) {
     if (!batchId) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">차수를 선택하세요.</td></tr>`; currentPickingStatusData = []; return; }
     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">불러오는 중...</td></tr>`;
     const { data, error } = await supabaseClient.from('picking_orders').select(`*`).eq('batch_id', batchId).order('id');
-    
+
     currentPickingStatusData = data || [];
-    
+
     if (error || data.length === 0) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">데이터가 없습니다.</td></tr>`; return; }
-    tbody.innerHTML = data.map(order => 
+    tbody.innerHTML = data.map(order =>
         `<tr>
             <td>${order.order_number}</td>
             <td>${order.destination_address || ''}</td>
@@ -812,7 +811,7 @@ async function showProductMaster() {
             <div class="table-container"></div>
         </div>
     </div>`;
-    
+
     const searchButton = contentArea.querySelector('.search-button');
     contentArea.querySelectorAll('.filter-input').forEach(input => {
         input.addEventListener('keydown', (e) => {
@@ -821,7 +820,7 @@ async function showProductMaster() {
             }
         });
     });
-    
+
     await renderProductTable();
 }
 
@@ -835,9 +834,9 @@ async function renderProductTable() {
     if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
     if (currentSort.column) { query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' }); }
     const { data, error } = await fetchAllWithPagination(query);
-    
+
     currentProductMasterData = data || [];
-    
+
     if (error) { tableContainer.innerHTML = `<p>데이터 로딩 오류: ${error.message}</p>`; return; }
     if (data.length === 0) {
         tableContainer.innerHTML = `<p style="text-align:center; padding: 2rem;">표시할 데이터가 없습니다.</p>`;
@@ -850,15 +849,15 @@ async function renderProductTable() {
     updateSortIndicator();
 }
 
-function updateSortIndicator() { 
+function updateSortIndicator() {
     const section = contentArea.querySelector('#products-section');
     if (!section) return;
-    section.querySelectorAll('.sortable').forEach(th => { 
-        th.classList.remove('asc', 'desc'); 
-        if (th.dataset.column === currentSort.column) { 
-            th.classList.add(currentSort.direction); 
-        } 
-    }); 
+    section.querySelectorAll('.sortable').forEach(th => {
+        th.classList.remove('asc', 'desc');
+        if (th.dataset.column === currentSort.column) {
+            th.classList.add(currentSort.direction);
+        }
+    });
 }
 
 async function handleCornUpload() {
@@ -972,14 +971,12 @@ async function loadUsers() {
         const isAdmin = user.user_metadata && user.user_metadata.is_admin === true;
         const isSuperAdmin = user.email === 'eowert72@gmail.com';
         
-        // [수정] 슈퍼관리자도 승인된 것으로 처리
         const isApproved = isAdmin || isSuperAdmin;
 
         const statusClass = isApproved ? 'status-approved' : 'status-pending';
         const statusText = isApproved ? '승인 완료' : '승인 대기';
         
         let actionButton = '';
-        // '승인' 버튼은 아직 승인되지 않았고, 슈퍼 관리자가 아닌 사용자에게만 표시
         if (!isAdmin && !isSuperAdmin) {
             actionButton = `<button class="btn-approve approve-user-button" data-id="${user.id}">승인</button>`;
         }
