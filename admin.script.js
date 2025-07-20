@@ -1,1016 +1,1160 @@
 // Supabase 클라이언트 설정
-const SUPABASE_URL = 'https://lmlpbjosdygnpqcnrwuj.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtbHBiam9zZHlnbnBxY25yd3VqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5MDA2NjgsImV4cCI6MjA2ODQ3NjY2OH0.Jt1Al2Sl44fSlRMAsvRw5cBuKfXcMzeYyzE774stBuQ';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const { createClient } = supabase;
+const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
-// --- DOM 요소 ---
-const contentArea = document.getElementById('content-area');
-const navButtons = document.querySelectorAll('nav button');
-const logoutButton = document.getElementById('logout-button');
-const userEmailDisplay = document.getElementById('current-user-email');
-const batchSummaryModal = document.getElementById('batch-summary-modal');
-
-
-// --- 상태 관리 변수 ---
-let currentChannelId = localStorage.getItem('adminSelectedChannelId') || null;
-let currentFilters = { product_code: '', barcode: '', product_name: '' };
-let currentSort = { column: 'id', direction: 'desc' };
-let currentPickingStatusData = [];
-let currentBatchDetailsData = [];
-let currentProductMasterData = [];
-
-
-// --- 초기화 및 권한 확인 ---
+// 로그인 및 관리자 권한 확인
 (async () => {
     const { data: { session }, error } = await supabaseClient.auth.getSession();
-    
-    if (error || !session || (session.user.email !== 'eowert72@gmail.com' && (!session.user.user_metadata || !session.user.user_metadata.is_admin))) {
+    if (error || !session || session.user.user_metadata.is_approved !== true) {
         await supabaseClient.auth.signOut();
-        alert('로그인이 필요하거나 관리자 권한이 없습니다.');
+        alert('로그인이 필요하거나, 승인되지 않은 계정입니다.');
         window.location.href = 'login.html';
         return;
     }
+    const user = session.user;
+    const userEmailDisplay = document.getElementById('current-user-email');
+    if (userEmailDisplay) { userEmailDisplay.textContent = user.email; }
+    const userManagementNav = document.getElementById('nav-users');
+    if (user.email !== 'eowert72@gmail.com') {
+        if(userManagementNav) userManagementNav.style.display = 'none';
+    }
     
-    userEmailDisplay.textContent = session.user.email;
-    
-    const superAdminOnlyButtons = ['nav-users']; 
-    superAdminOnlyButtons.forEach(id => {
-        const button = document.getElementById(id);
-        if (button && session.user.email !== 'eowert72@gmail.com') {
-            button.style.display = 'none';
-        }
-    });
-
-    await setupChannelSwitcher();
-    
-    document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
-    
-    const initialActiveButton = document.getElementById('nav-picking-status');
-    if(initialActiveButton) initialActiveButton.classList.add('active');
-    
-    showPickingStatus();
+    await populateChannelSwitcher();
+    showHomepage();
 })();
 
 
-// --- 네비게이션 및 채널 선택기 ---
-async function setupChannelSwitcher() {
-    const nav = document.querySelector('nav');
-    if (document.getElementById('channel-switcher-container')) return;
+const contentArea = document.getElementById('content-area');
+const navButtons = document.querySelectorAll('nav button');
+const channelSwitcher = document.getElementById('channel-switcher');
+const logoutButton = document.getElementById('logout-button');
 
-    const { data: channels, error } = await supabaseClient.from('channels').select('*').order('name');
-    if (error) { console.error('채널 목록 로딩 실패', error); return; }
+let currentSort = {};
+let currentFilters = {};
+let currentChannelId = localStorage.getItem('selectedAdminChannelId');
 
-    const storedChannelId = localStorage.getItem('adminSelectedChannelId');
-    const isValidStoredId = channels.some(c => c.id == storedChannelId);
 
-    if (isValidStoredId) {
-        currentChannelId = storedChannelId;
-    } else if (channels.length > 0) {
-        currentChannelId = channels[0].id;
-        localStorage.setItem('adminSelectedChannelId', currentChannelId);
-    } else {
-        currentChannelId = null;
-        localStorage.removeItem('adminSelectedChannelId');
+async function showHomepage() {
+    navButtons.forEach(btn => btn.classList.remove('active'));
+
+    if (channelSwitcher.options.length === 0) {
+        contentArea.innerHTML = `
+            <div id="home-section" class="content-section active">
+                <div class="card">
+                    <div class="card-body" style="text-align: center; padding: 3rem; font-size: 1.1rem; line-height: 1.8;">
+                        <p>생성되어 있는 채널이 없습니다.</p>
+                        <p>상단 메뉴의 <strong>[채널 관리]</strong> 탭을 클릭하여 채널을 추가해 주세요.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
     }
 
-    const switcherHTML = `<div id="channel-switcher-container"><label for="channel-switcher" style="color: white; font-weight: 500; margin-right: 8px;">채널:</label><select id="channel-switcher" style="padding: 5px; border-radius: 4px;">${channels.map(c => `<option value="${c.id}" ${c.id == currentChannelId ? 'selected' : ''}>${c.name}</option>`).join('')}</select></div>`;
-    nav.insertAdjacentHTML('afterbegin', switcherHTML);
+    const selectedChannelName = channelSwitcher.options[channelSwitcher.selectedIndex]?.text || '선택된 채널';
 
-    document.getElementById('channel-switcher').addEventListener('change', e => {
-        currentChannelId = e.target.value;
-        localStorage.setItem('adminSelectedChannelId', currentChannelId);
-        const activeNav = document.querySelector('nav button.active');
-        if (activeNav) { activeNav.click(); } else { showPickingStatus(); }
-    });
-}
+    contentArea.innerHTML = `
+        <div id="home-section">
+            <h2>'${selectedChannelName}' 채널 실사 요약</h2>
+            <div id="global-summary-container" class="card" style="padding: 2rem; font-size: 1.2rem; display: flex; justify-content: space-around;">
+                <p>요약 정보를 불러오는 중...</p>
+            </div>
+            <div class="card" style="margin-top: 1.5rem; padding: 1.5rem; height: 40vh;">
+                <canvas id="inventory-summary-chart"></canvas>
+            </div>
+        </div>
+    `;
+    const summaryContainer = document.getElementById('global-summary-container');
 
-navButtons.forEach(button => {
-    button.addEventListener('click', (e) => {
-        navButtons.forEach(btn => btn.classList.remove('active'));
-        e.target.classList.add('active');
+    const query = supabaseClient
+        .from('inventory_scans')
+        .select('expected_quantity, quantity')
+        .eq('channel_id', currentChannelId)
+        .is('deleted_at', null);
         
-        switch (e.target.id) {
-            case 'nav-picking-status': showPickingStatus(); break;
-            case 'nav-batch-management': showBatchManagement(); break;
-            case 'nav-products': showProductMaster(); break;
-            case 'nav-users': showUserManagement(); break;
-            case 'nav-channels': showChannelManagement(); break;
-        }
-    });
-});
+    const { data, error } = await fetchAllWithPagination(query);
 
-
-// --- 이벤트 리스너 통합 ---
-contentArea.addEventListener('click', function(e) {
-    const target = e.target.closest('button');
-    if (!target) return;
-
-    if (target.id === 'refresh-picking-status-btn') showPickingStatus();
-    if (target.id === 'refresh-batch-details-btn') loadBatchDetails();
-    if (target.id === 'refresh-product-master-btn') renderProductTable();
-    if (target.id === 'refresh-channels-btn') showChannelManagement();
-    if (target.id === 'refresh-users-btn') showUserManagement();
-
-    if (target.id === 'download-picking-status-btn') {
-        if (!currentPickingStatusData || currentPickingStatusData.length === 0) {
-            alert('다운로드할 데이터가 없습니다.'); return;
-        }
-        const dataToExport = currentPickingStatusData.map(order => ({
-            '출고지시번호': order.order_number,
-            '출고지 주소': order.destination_address,
-            '수취인': order.recipient,
-            '지시수량': order.total_expected_quantity,
-            '완료수량': order.total_picked_quantity,
-            '상태': order.status
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '출고현황');
-        XLSX.writeFile(workbook, `출고현황_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    }
-
-    if (target.id === 'download-batch-details-btn') {
-        if (!currentBatchDetailsData || currentBatchDetailsData.length === 0) {
-            alert('다운로드할 데이터가 없습니다.'); return;
-        }
-        const dataToExport = currentBatchDetailsData.map(item => ({
-            '출고일': item.date,
-            '수취인': item.recipient,
-            '출고지 주소': item.destination_address,
-            '출고지시번호': item.order_number,
-            '상품명': item.product_name,
-            '상품코드(바코드)': item.barcode,
-            '지시수량': item.expected_quantity,
-            '완료수량': item.picked_quantity
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '출고상세');
-        XLSX.writeFile(workbook, `출고상세_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    }
-
-    if (target.id === 'download-product-master-btn') {
-        if (!currentProductMasterData || currentProductMasterData.length === 0) {
-            alert('다운로드할 데이터가 없습니다.'); return;
-        }
-        const dataToExport = currentProductMasterData.map(p => ({
-            '상품코드': p.product_code,
-            '바코드': p.barcode,
-            '상품명': p.product_name
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '상품마스터');
-        XLSX.writeFile(workbook, `상품마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    }
-
-    if (target.id === 'show-batch-summary-btn') {
-        const date = contentArea.querySelector('#work-date-picker').value;
-        if (!date) {
-            alert('먼저 예정일을 선택해주세요.');
-            return;
-        }
-        showBatchSummaryModal(date);
-    }
-    if (target.id === 'query-batch-btn') loadBatchDetails();
-    if (target.id === 'new-batch-btn') handleCreateNewBatch();
-    if (target.classList.contains('upload-standard-btn')) handleStandardOrderUpload(target);
-    if (target.classList.contains('upload-corn-btn')) handleCornOrderUpload(target);
-    if (target.classList.contains('delete-batch-btn')) handleDeleteBatch(target.dataset.id);
-    if (target.classList.contains('download-standard-template')) handleStandardTemplateDownload();
-    if (target.id === 'add-channel-btn') handleAddChannel();
-    if (target.classList.contains('delete-channel-btn')) handleDeleteChannel(target.dataset.id);
-    if (target.classList.contains('search-button')) {
-        currentFilters.product_code = contentArea.querySelector('#filter-prod-code').value.trim();
-        currentFilters.barcode = contentArea.querySelector('#filter-prod-barcode').value.trim();
-        currentFilters.product_name = contentArea.querySelector('#filter-prod-name').value.trim();
-        renderProductTable();
-    }
-    if (target.classList.contains('reset-button')) {
-        currentFilters = { product_code: '', barcode: '', product_name: '' };
-        contentArea.querySelectorAll('.filter-input').forEach(input => input.value = '');
-        renderProductTable();
-    }
-    if (target.classList.contains('sortable')) {
-        const column = target.dataset.column;
-        if (currentSort.column === column) { currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc'; }
-        else { currentSort.column = column; currentSort.direction = 'asc'; }
-        renderProductTable();
-    }
-    if (target.classList.contains('download-template')) handleProductTemplateDownload();
-    if (target.classList.contains('upload-data')) handleProductUpload();
-    if (target.id === 'upload-corn-button') handleCornUpload();
-    if (target.classList.contains('delete-selected')) handleDeleteSelectedProducts();
-    if (target.classList.contains('approve-user-button')) handleApproveUser(e);
-});
-
-contentArea.addEventListener('change', function(e) {
-    if (e.target.classList.contains('select-all-checkbox')) {
-        contentArea.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = e.target.checked);
-    }
-});
-
-
-if (batchSummaryModal) {
-    batchSummaryModal.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal-overlay') || e.target.classList.contains('modal-close-btn')) {
-            batchSummaryModal.style.display = 'none';
-        }
-        const selectedRow = e.target.closest('tr');
-        if (selectedRow && selectedRow.dataset.batchNumber) {
-            const batchNumber = selectedRow.dataset.batchNumber;
-            contentArea.querySelector('#batch-number-input').value = batchNumber;
-            batchSummaryModal.style.display = 'none';
-            loadBatchDetails();
-        }
-    });
-}
-
-
-async function showBatchSummaryModal(date) {
-    batchSummaryModal.style.display = 'flex';
-    const tbody = batchSummaryModal.querySelector('#batch-summary-table tbody');
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem;">현황을 불러오는 중...</td></tr>`;
-
-    try {
-        const { data, error } = await supabaseClient.rpc('get_batch_summary_by_date', {
-            p_channel_id: currentChannelId,
-            p_batch_date: date
-        });
-
-        if (error) throw error;
-
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem;">해당 날짜에 출고 차수가 없습니다.</td></tr>`;
-            return;
-        }
-
-        let tableHtml = '';
-        data.forEach(batch => {
-            const progress = (batch.order_count > 0) ? (batch.completed_count / batch.order_count * 100) : 0;
-
-            let progressHtml;
-            if (progress > 0) {
-                progressHtml = `
-                    <div class="progress-cell">
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${progress.toFixed(2)}%;"></div>
-                        </div>
-                        <span class="progress-text">${progress.toFixed(1)}%</span>
-                    </div>
-                `;
-            } else {
-                progressHtml = `<span class="progress-text">0.0%</span>`;
-            }
-
-            tableHtml += `
-                <tr data-batch-number="${batch.batch_number}">
-                    <td style="text-align: center; font-weight: 700;">${batch.batch_number}차</td>
-                    <td style="text-align: center;">${batch.status || '대기'}</td>
-                    <td style="text-align: center;">${batch.order_count}</td>
-                    <td style="text-align: center;">${batch.completed_count}</td>
-                    <td>${progressHtml}</td>
-                </tr>
-            `;
-        });
-        tbody.innerHTML = tableHtml;
-
-    } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 2rem;">오류: ${err.message}</td></tr>`;
-    }
-}
-
-
-async function showChannelManagement() {
-    contentArea.innerHTML = `
-        <div class="content-section">
-            <div class="page-header">
-                <h2>채널 관리</h2>
-                <div class="actions-group">
-                    <button id="refresh-channels-btn" class="btn-secondary">새로고침</button>
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-header">새 채널 추가</div>
-                <div class="card-body">
-                    <input type="text" id="new-channel-name" placeholder="새 채널 이름">
-                    <button id="add-channel-btn" class="btn-primary">추가</button>
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-header">채널 목록</div>
-                <ul id="channel-list" class="management-list"></ul>
-            </div>
-        </div>`;
-
-    const newChannelInput = contentArea.querySelector('#new-channel-name');
-    newChannelInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            handleAddChannel();
-        }
-    });
-
-    await loadChannelsForManagement();
-}
-
-async function loadChannelsForManagement() {
-    const list = contentArea.querySelector('#channel-list');
-    list.innerHTML = `<li>불러오는 중...</li>`;
-    const { data, error } = await supabaseClient.from('channels').select('*').order('name');
-    if (error) { list.innerHTML = `<li>오류: ${error.message}</li>`; return; }
-    if (data.length === 0) { list.innerHTML = `<li>생성된 채널이 없습니다.</li>`; return; }
-    list.innerHTML = data.map(c => `<li class="management-list-item"><span>${c.name}</span><button class="btn-danger delete-channel-btn" data-id="${c.id}">삭제</button></li>`).join('');
-}
-
-async function handleAddChannel() {
-    const nameInput = contentArea.querySelector('#new-channel-name');
-    const name = nameInput.value.trim();
-    if (!name) { alert('채널 이름을 입력하세요.'); return; }
-    const { error } = await supabaseClient.from('channels').insert({ name });
-    if (error) { alert('채널 추가 실패: ' + error.message); }
-    else { alert('채널이 추가되었습니다. 페이지를 새로고침합니다.'); location.reload(); }
-}
-
-async function handleDeleteChannel(channelId) {
-    if (confirm('이 채널을 삭제하면 관련된 모든 상품, 출고 데이터가 삭제됩니다. 계속하시겠습니까?')) {
-        const { error } = await supabaseClient.from('channels').delete().eq('id', channelId);
-        if (error) {
-            alert('채널 삭제 실패: ' + error.message);
-        } else {
-            if (localStorage.getItem('adminSelectedChannelId') === channelId) {
-                localStorage.removeItem('adminSelectedChannelId');
-            }
-            alert('채널이 삭제되었습니다. 페이지를 새로고침합니다.');
-            location.reload();
-        }
-    }
-}
-
-// =================================================================
-// 출고 차수 관리 (틀 고정 및 디자인 개선)
-// =================================================================
-async function showBatchManagement() {
-    contentArea.innerHTML = `
-        <div class="content-section">
-            <div class="sticky-controls">
-                <div class="page-header">
-                    <h2>출고 업로드 및 확인</h2>
-                     <div class="actions-group">
-                        <button id="refresh-batch-details-btn" class="btn-secondary">새로고침</button>
-                        <button id="download-batch-details-btn" class="btn-primary">엑셀 다운로드</button>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body">
-                        <label>예정일:</label>
-                        <input type="date" id="work-date-picker" value="${new Date().toISOString().split('T')[0]}">
-                        <label style="margin-left: 20px;">업로드차수:</label>
-                        <input type="number" id="batch-number-input" placeholder="차수" min="1" style="width: 80px;">
-                        <button id="show-batch-summary-btn" class="lookup-btn" title="차수 현황 보기">
-                            <i class="material-icons">search</i>
-                        </button>
-                        <button id="query-batch-btn" class="btn-primary" style="margin-left: 5px;">조회</button>
-                        <button id="new-batch-btn" class="btn-secondary">신규</button>
-                    </div>
-                </div>
-                <div id="batch-summary-section"></div>
-                <div id="batch-upload-section"></div>
-            </div>
-            <div id="batch-details-section" class="table-wrapper">
-            </div>
-        </div>`;
-
-    const batchInput = contentArea.querySelector('#batch-number-input');
-    batchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            loadBatchDetails();
-        }
-    });
-}
-
-async function loadBatchDetails() {
-    const batchInput = contentArea.querySelector('#batch-number-input');
-    const date = contentArea.querySelector('#work-date-picker').value;
-    const batchNumber = batchInput.value;
-    const uploadSection = contentArea.querySelector('#batch-upload-section');
-    const summarySection = contentArea.querySelector('#batch-summary-section');
-    const detailsSection = contentArea.querySelector('#batch-details-section');
-
-    if (!date || !batchNumber) {
-        detailsSection.innerHTML = `<p style="text-align:center; padding:2rem;">날짜와 차수를 모두 입력하고 조회하세요.</p>`;
-        uploadSection.innerHTML = '';
-        summarySection.innerHTML = '';
+    if (error) {
+        summaryContainer.innerHTML = `<p style="color:red;">현황 데이터를 불러오는 데 실패했습니다: ${error.message}</p>`;
         return;
     }
 
-    detailsSection.innerHTML = `<p style="text-align:center; padding:2rem;">불러오는 중...</p>`;
-    summarySection.innerHTML = '';
-    currentBatchDetailsData = [];
+    const totals = data.reduce((acc, item) => {
+        acc.expected += item.expected_quantity || 0;
+        acc.actual += item.quantity || 0;
+        return acc;
+    }, { expected: 0, actual: 0 });
 
-    const { data: batchData } = await supabaseClient.from('picking_batches').select('id, status').eq('channel_id', currentChannelId).eq('batch_date', date).eq('batch_number', batchNumber).single();
+    const progress = totals.expected > 0 ? (totals.actual / totals.expected) * 100 : 0;
 
-    const batchId = batchData ? batchData.id : null;
-    const batchStatus = batchData ? batchData.status : '신규';
+    summaryContainer.innerHTML = `
+        <span><strong>총 전산수량:</strong> ${totals.expected.toLocaleString()}</span>
+        <span><strong>총 실사수량:</strong> ${totals.actual.toLocaleString()}</span>
+        <span><strong>진척도:</strong> ${progress.toFixed(2)}%</span>
+    `;
 
-    uploadSection.innerHTML = `
-        <div class="control-grid">
-            <div class="card">
-                <div class="card-header"><strong>${batchNumber}차수</strong> - 표준 양식</div>
-                <div class="card-body">
-                    <button class="download-standard-template btn-secondary">양식 다운로드</button>
-                    <input type="file" class="standard-excel-input" accept=".xlsx, .xls" style="flex-grow:1;">
-                    <button class="upload-standard-btn btn-primary" data-date="${date}" data-batch="${batchNumber}">업로드</button>
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-header"><strong>${batchNumber}차수</strong> - CORN 양식</div>
-                <div class="card-body">
-                    <input type="file" class="corn-excel-input" accept=".xlsx, .xls" style="flex-grow:1;">
-                    <button class="upload-corn-btn btn-primary" data-date="${date}" data-batch="${batchNumber}">업로드</button>
-                </div>
-            </div>
-        </div>`;
+    // --- 차트 생성 로직 ---
+    const remaining = totals.expected - totals.actual;
+    const chartCanvas = document.getElementById('inventory-summary-chart');
 
-    if (batchData) {
-        try {
-            const { data: ordersWithItems, error: ordersError } = await supabaseClient
-                .from('picking_orders')
-                .select(`order_number, recipient, destination_address, picking_items (product_name, barcode, expected_quantity, picked_quantity)`)
-                .eq('batch_id', batchId)
-                .order('order_number', { ascending: true });
+    const existingChart = Chart.getChart(chartCanvas);
+    if (existingChart) {
+        existingChart.destroy();
+    }
 
-            if (ordersError) throw ordersError;
-
-            const allItems = [];
-            let totalQuantity = 0, totalPicked = 0, orderCount = 0;
-
-            if (ordersWithItems && ordersWithItems.length > 0) {
-                orderCount = ordersWithItems.length;
-                ordersWithItems.forEach(order => {
-                    if (order.picking_items && order.picking_items.length > 0) {
-                        order.picking_items.forEach(item => {
-                            const pickedQty = item.picked_quantity || 0;
-                            allItems.push({ ...item, date: date, order_number: order.order_number, recipient: order.recipient, destination_address: order.destination_address, picked_quantity: pickedQty });
-                            totalQuantity += item.expected_quantity;
-                            totalPicked += pickedQty;
-                        });
+    new Chart(chartCanvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['실사 완료 수량', '미실사 수량'],
+            datasets: [{
+                label: '수량',
+                data: [totals.actual, remaining > 0 ? remaining : 0],
+                backgroundColor: [
+                    '#007bff',
+                    '#e9ecef'
+                ],
+                borderColor: [
+                    '#007bff',
+                    '#e9ecef'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                },
+                title: {
+                    display: true,
+                    text: '실사 진행 현황',
+                    font: {
+                        size: 16
                     }
-                });
-            }
-
-            currentBatchDetailsData = allItems;
-
-            const summaryHTML = `
-                <div class="card" style="margin-top: 1.5rem;">
-                    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>${batchNumber}차수 현황 (상태: ${batchStatus}) | 총 주문 <strong>${orderCount}</strong>건, 총 지시 <strong>${totalQuantity}</strong>개, 총 완료 <strong>${totalPicked}</strong>개</span>
-                        ${batchId ? `<button class="delete-batch-btn btn-icon-danger" data-id="${batchId}" title="이 차수를 삭제합니다"><i class="material-icons">delete_outline</i></button>` : ''}
-                    </div>
-                </div>`;
-            summarySection.innerHTML = summaryHTML;
-
-            let tableHTML;
-            if (allItems.length > 0) {
-                 tableHTML = `
-                    <table>
-                        <thead>
-                            <tr><th>출고일</th><th>수취인</th><th>출고지 주소</th><th>출고지시번호</th><th>상품명</th><th>상품코드 (바코드)</th><th>지시수량</th><th>완료수량</th></tr>
-                        </thead>
-                        <tbody>
-                            ${allItems.map(item => `
-                                <tr class="${item.picked_quantity >= item.expected_quantity ? 'completed-row' : ''}">
-                                    <td>${item.date}</td>
-                                    <td>${item.recipient || ''}</td>
-                                    <td>${item.destination_address || ''}</td>
-                                    <td>${item.order_number}</td>
-                                    <td>${item.product_name || '이름 없음'}</td>
-                                    <td>${item.barcode}</td>
-                                    <td>${item.expected_quantity}</td>
-                                    <td>${item.picked_quantity}</td>
-                                </tr>`).join('')}
-                        </tbody>
-                    </table>`;
-            } else {
-                 tableHTML = `<div class="card-body"><p style="text-align:center;">업로드된 주문 상세 내역이 없습니다.</p></div>`;
-            }
-            detailsSection.innerHTML = tableHTML;
-
-        } catch (error) {
-            detailsSection.innerHTML = `<div class="card-body"><p style="color:red;">데이터를 불러오는 중 오류가 발생했습니다: ${error.message}</p></div>`;
-            summarySection.innerHTML = '';
+                }
+            },
+            cutout: '60%'
         }
-    } else {
-        detailsSection.innerHTML = `<div class="card-body"><p style="text-align:center;">데이터가 없습니다. 엑셀 파일을 업로드하세요.</p></div>`;
-        summarySection.innerHTML = '';
-    }
+    });
 }
 
+async function updateGlobalProgress() {
+    const progressContainer = document.querySelector('#admin-progress-container');
+    if (!progressContainer) return;
 
-async function handleCreateNewBatch() {
-    const batchInput = contentArea.querySelector('#batch-number-input');
-    const date = contentArea.querySelector('#work-date-picker').value;
-    if (!date) { alert('날짜를 먼저 선택하세요.'); return; }
-    const { data } = await supabaseClient.from('picking_batches').select('batch_number').eq('channel_id', currentChannelId).eq('batch_date', date);
-    const maxBatchNum = data && data.length > 0 ? Math.max(...data.map(b => b.batch_number)) : 0;
-    const newBatchNumber = maxBatchNum + 1;
-    batchInput.value = newBatchNumber;
-    alert(`신규 ${newBatchNumber}차수가 설정되었습니다.`);
-    loadBatchDetails();
-}
+    const query = supabaseClient
+        .from('inventory_scans')
+        .select('expected_quantity, quantity')
+        .eq('channel_id', currentChannelId)
+        .is('deleted_at', null);
 
-async function handleStandardTemplateDownload() {
-    const headers = ["order_number", "recipient", "destination_address", "barcode", "product_name", "expected_quantity"];
-    const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Orders");
-    XLSX.writeFile(workbook, "standard_order_template.xlsx");
-}
-
-async function handleStandardOrderUpload(target) {
-    const fileInput = contentArea.querySelector('.standard-excel-input');
-    const file = fileInput.files[0];
-    if (!file) { return alert("표준 양식 엑셀 파일을 선택하세요."); }
-    const { date, batch } = target.dataset;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        try {
-            let { data: batchData, error: selectError } = await supabaseClient
-                .from('picking_batches').select('id').eq('channel_id', currentChannelId).eq('batch_date', date).eq('batch_number', batch).single();
-            if (selectError && selectError.code !== 'PGRST116') throw selectError;
-            if (!batchData) {
-                const { data: newBatchData, error: insertError } = await supabaseClient
-                    .from('picking_batches').insert({ channel_id: currentChannelId, batch_date: date, batch_number: batch, status: '대기' }).select('id').single();
-                if (insertError) throw insertError;
-                batchData = newBatchData;
-            }
-
-            const excelData = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(excelData, { type: 'array' });
-            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-            if (jsonData.length === 0) throw new Error('엑셀 파일에 데이터가 없습니다.');
-
-            const orders = {};
-            jsonData.forEach(row => {
-                if (!row.order_number) return;
-                const orderKey = row.order_number.toString();
-                if (!orders[orderKey]) {
-                    orders[orderKey] = { recipient: row.recipient || '', address: row.destination_address, items: [], total_expected: 0 };
-                }
-                const quantity = Number(row.expected_quantity) || 0;
-                orders[orderKey].items.push({ barcode: row.barcode.toString(), product_name: row.product_name, expected_quantity: quantity });
-                orders[orderKey].total_expected += quantity;
-            });
-
-            await supabaseClient.from('picking_orders').delete().eq('batch_id', batchData.id);
-            for (const orderKey in orders) {
-                const orderData = orders[orderKey];
-                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({
-                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient,
-                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected
-                }).select().single();
-                if (orderError) throw orderError;
-                const itemsToInsert = orderData.items.map(item => ({ ...item, order_id: insertedOrder.id }));
-                await supabaseClient.from('picking_items').insert(itemsToInsert);
-            }
-            alert(`표준 양식 업로드 성공!`);
-            loadBatchDetails();
-        } catch (error) { alert('업로드 실패: ' + error.message); }
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-async function handleCornOrderUpload(target) {
-    const fileInput = contentArea.querySelector('.corn-excel-input');
-    const file = fileInput.files[0];
-    if (!file) { return alert("CORN 양식 엑셀 파일을 선택하세요."); }
-    const { date, batch } = target.dataset;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        try {
-            const { data: products } = await supabaseClient.from('products').select('product_code, barcode, product_name').eq('channel_id', currentChannelId);
-            if (!products || products.length === 0) throw new Error('상품 마스터에 데이터가 없습니다.');
-            const productMap = new Map(products.map(p => [p.product_code, p]));
-
-            let { data: batchData, error: selectError } = await supabaseClient
-                .from('picking_batches').select('id').eq('channel_id', currentChannelId).eq('batch_date', date).eq('batch_number', batch).single();
-            if (selectError && selectError.code !== 'PGRST116') throw selectError;
-            if (!batchData) {
-                const { data: newBatchData, error: insertError } = await supabaseClient
-                    .from('picking_batches').insert({ channel_id: currentChannelId, batch_date: date, batch_number: batch, status: '대기' }).select('id').single();
-                if (insertError) throw insertError;
-                batchData = newBatchData;
-            }
-
-            const excelData = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(excelData, { type: 'array' });
-            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
-            const dataRows = rows.slice(1);
-            if (dataRows.length === 0) throw new Error('엑셀 파일에 데이터가 없습니다.');
-
-            const orders = {};
-            let notFoundCodes = new Set();
-            dataRows.forEach(row => {
-                const orderKey = row[1];
-                if (!orderKey) return;
-
-                const productCode = row[28];
-                const productInfo = productMap.get(productCode);
-                if (!productInfo) {
-                    notFoundCodes.add(productCode);
-                    return;
-                }
-
-                if (!orders[orderKey]) {
-                    orders[orderKey] = {
-                        recipient: row[17] || '',
-                        address: row[21] || '',
-                        items: [],
-                        total_expected: 0
-                    };
-                }
-
-                const quantity = Number(row[34]) || 0;
-                const barcode = productInfo.barcode;
-
-                const existingItem = orders[orderKey].items.find(item => item.barcode === barcode);
-
-                if (existingItem) {
-                    existingItem.expected_quantity += quantity;
-                } else {
-                    orders[orderKey].items.push({
-                        barcode: barcode,
-                        product_name: productInfo.product_name,
-                        expected_quantity: quantity
-                    });
-                }
-                orders[orderKey].total_expected += quantity;
-            });
-
-            await supabaseClient.from('picking_orders').delete().eq('batch_id', batchData.id);
-            for (const orderKey in orders) {
-                const orderData = orders[orderKey];
-                const { data: insertedOrder, error: orderError } = await supabaseClient.from('picking_orders').insert({
-                    batch_id: batchData.id, order_number: orderKey, recipient: orderData.recipient,
-                    destination_address: orderData.address, total_expected_quantity: orderData.total_expected
-                }).select().single();
-                if(orderError) throw orderError;
-                const itemsToInsert = orderData.items.map(item => ({ ...item, order_id: insertedOrder.id }));
-                await supabaseClient.from('picking_items').insert(itemsToInsert);
-            }
-            let successMessage = `CORN 양식 업로드 성공!`;
-            if (notFoundCodes.size > 0) { successMessage += `\n\n주의: 누락된 상품코드: ${Array.from(notFoundCodes).join(', ')}`; }
-            alert(successMessage);
-            loadBatchDetails();
-        } catch (error) { alert('업로드 실패: ' + error.message); }
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-async function handleDeleteBatch(batchId) {
-    if (!batchId || !confirm('이 차수의 모든 출고 데이터가 삭제됩니다. 계속하시겠습니까?')) return;
-    const { error } = await supabaseClient.from('picking_batches').delete().eq('id', batchId);
-    if (error) { alert('삭제 실패: ' + error.message); }
-    else {
-        alert('삭제되었습니다.');
-        contentArea.querySelector('#batch-details-section').innerHTML = '';
-        contentArea.querySelector('#batch-upload-section').innerHTML = '';
-        contentArea.querySelector('#batch-summary-section').innerHTML = '';
-    }
-}
-
-// =================================================================
-// 출고 현황 (조회 전용)
-// =================================================================
-async function showPickingStatus() {
-    contentArea.innerHTML = `
-        <div class="content-section">
-            <div class="sticky-controls">
-                <div class="page-header">
-                    <h2>출고 현황 조회</h2>
-                    <div class="actions-group">
-                        <button id="refresh-picking-status-btn" class="btn-secondary">새로고침</button>
-                        <button id="download-picking-status-btn" class="btn-primary">엑셀 다운로드</button>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body">
-                        <label>날짜 선택:</label>
-                        <input type="date" id="status-date-picker" value="${new Date().toISOString().split('T')[0]}">
-                        <label>차수 선택:</label>
-                        <select id="status-batch-selector"><option>날짜를 먼저 선택하세요</option></select>
-                    </div>
-                </div>
-            </div>
-            <div class="card" style="flex-grow: 1; display: flex; flex-direction: column;">
-                <div class="card-header">출고 진행 현황</div>
-                <div class="table-wrapper" style="flex-grow: 1;">
-                    <table id="picking-status-table">
-                        <thead>
-                            <tr>
-                                <th>출고지시번호</th>
-                                <th>출고지 주소</th>
-                                <th>수취인</th>
-                                <th>지시수량</th>
-                                <th>완료수량</th>
-                                <th>상태</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>`;
-    const datePicker = contentArea.querySelector('#status-date-picker');
-    const batchSelector = contentArea.querySelector('#status-batch-selector');
-    await populateStatusBatchSelector(datePicker.value);
-    datePicker.addEventListener('change', e => populateStatusBatchSelector(e.target.value));
-    batchSelector.addEventListener('change', e => loadPickingOrdersForStatus(e.target.value));
-}
-
-async function populateStatusBatchSelector(date) {
-    const selector = contentArea.querySelector('#status-batch-selector');
-    const tbody = contentArea.querySelector('#picking-status-table tbody');
-    selector.innerHTML = `<option>불러오는 중...</option>`;
-    if (tbody) tbody.innerHTML = '';
-    currentPickingStatusData = [];
-    const { data, error } = await supabaseClient.from('picking_batches').select('id, batch_number').eq('batch_date', date).eq('channel_id', currentChannelId).order('batch_number');
-    if (error || data.length === 0) {
-        selector.innerHTML = `<option>해당 날짜에 차수 없음</option>`;
-        if(tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">표시할 데이터가 없습니다.</td></tr>`;
+    const { data, error } = await fetchAllWithPagination(query);
+    
+    if (error) {
+        console.error('진행도 데이터를 불러오는 데 실패했습니다:', error);
         return;
     }
-    selector.innerHTML = `<option value="">-- 차수 선택 --</option>` + data.map(b => `<option value="${b.id}">${b.batch_number}차수</option>`).join('');
+
+    const totals = data.reduce((acc, item) => {
+        acc.expected += item.expected_quantity || 0;
+        acc.actual += item.quantity || 0;
+        return acc;
+    }, { expected: 0, actual: 0 });
+    
+    progressContainer.innerHTML = data.length > 0
+        ? `<b>총 전산수량:</b> ${totals.expected.toLocaleString()} | <b>총 실사수량:</b> ${totals.actual.toLocaleString()} | <b>진척도:</b> ${totals.expected > 0 ? (totals.actual / totals.expected * 100).toFixed(2) : 0}%`
+        : '';
 }
 
-async function loadPickingOrdersForStatus(batchId) {
-    const tbody = contentArea.querySelector('#picking-status-table tbody');
-    if (!tbody) return;
-    if (!batchId) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">차수를 선택하세요.</td></tr>`; currentPickingStatusData = []; return; }
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">불러오는 중...</td></tr>`;
-    const { data, error } = await supabaseClient.from('picking_orders').select(`*`).eq('batch_id', batchId).order('id');
 
-    currentPickingStatusData = data || [];
-
-    if (error || data.length === 0) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">데이터가 없습니다.</td></tr>`; return; }
-    tbody.innerHTML = data.map(order =>
-        `<tr>
-            <td>${order.order_number}</td>
-            <td>${order.destination_address || ''}</td>
-            <td>${order.recipient || ''}</td>
-            <td>${order.total_expected_quantity}</td>
-            <td>${order.total_picked_quantity}</td>
-            <td>${order.status}</td>
-        </tr>`
-    ).join('');
+async function fetchAllWithPagination(queryBuilder) {
+    let allData = [];
+    let page = 0;
+    const pageSize = 1000;
+    while (true) {
+        const { data, error } = await queryBuilder.range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) { console.error("데이터 조회 중 오류 발생:", error); return { data: allData, error }; }
+        if (data && data.length > 0) allData = allData.concat(data);
+        if (!data || data.length < pageSize) break;
+        page++;
+    }
+    return { data: allData, error: null };
 }
 
-// =================================================================
-// 상품 마스터 관리
-// =================================================================
-async function showProductMaster() {
+function refreshCurrentView() {
+    const activeNav = document.querySelector('nav button.active');
+    if (!activeNav) {
+        showHomepage();
+        return;
+    }
+    switch (activeNav.id) {
+        case 'nav-inventory': showInventoryStatus(); break;
+        case 'nav-products': showProductMaster(); break;
+        case 'nav-locations': showLocationMaster(); break;
+        case 'nav-channels': showChannelMaster(); break;
+        case 'nav-users': showUserManagement(); break;
+    }
+}
+
+async function populateChannelSwitcher() {
+    const { data, error } = await supabaseClient.from('channels').select('*').order('id');
+    if (error) {
+        alert('채널 목록을 불러오는 데 실패했습니다.');
+        return;
+    }
+
+    channelSwitcher.innerHTML = '';
+    data.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel.id;
+        option.textContent = channel.name;
+        channelSwitcher.appendChild(option);
+    });
+
+    if (currentChannelId && data.some(c => c.id == currentChannelId)) {
+        channelSwitcher.value = currentChannelId;
+    } else if (data.length > 0) {
+        currentChannelId = data[0].id;
+        localStorage.setItem('selectedAdminChannelId', currentChannelId);
+        channelSwitcher.value = currentChannelId;
+    }
+}
+
+
+async function showInventoryStatus() {
     contentArea.innerHTML = `
-    <div id="products-section" class="content-section active">
+    <div id="inventory-section" class="content-section active">
         <div class="sticky-controls">
             <div class="page-header">
-                <h2>상품 마스터 관리</h2>
+                <h2>실사 현황</h2>
                 <div class="actions-group">
-                    <button id="refresh-product-master-btn" class="btn-secondary">새로고침</button>
-                    <button id="download-product-master-btn" class="btn-primary">엑셀 다운로드</button>
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="download-excel btn-primary">엑셀 다운로드</button>
                 </div>
             </div>
             <div class="control-grid">
                 <div class="card">
                     <div class="card-header">필터 및 검색</div>
                     <div class="card-body">
-                        <input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}">
-                        <input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}">
-                        <input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}">
+                        <input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}">
+                        <input type="text" id="filter-barcode" class="filter-input" placeholder="바코드/상품코드 검색..." value="${currentFilters.barcode || ''}">
                         <button class="search-button btn-primary">검색</button>
                         <button class="reset-button btn-secondary">초기화</button>
                     </div>
                 </div>
                 <div class="card">
-                    <div class="card-header">데이터 관리 (표준 양식)</div>
+                    <div class="card-header">데이터 관리</div>
                     <div class="card-body">
-                        <button class="download-template btn-secondary">양식 다운로드</button>
-                        <input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls">
-                        <button class="upload-data btn-primary">업로드 추가</button>
                         <button class="delete-selected btn-danger">선택 삭제</button>
                     </div>
                 </div>
-                <div class="card">
-                    <div class="card-header">CORN 양식 업로드 (추가/수정)</div>
-                    <div class="card-body">
-                        <input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls">
-                        <button id="upload-corn-button" class="btn-primary">업로드 실행</button>
+                 <div class="card danger-zone">
+                    <div class="card-header">⚠️ 전체 초기화 (주의)</div>
+                    <div class="card-body" style="flex-direction: column; align-items: stretch;">
+                        <div>
+                            <strong>표준 양식</strong>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;">
+                               <button id="reset-template-download" class="btn-secondary">양식 다운로드</button>
+                               <input type="file" id="reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
+                               <button id="reset-upload-button" class="btn-danger">초기화 및 업로드</button>
+                            </div>
+                        </div>
+                        <hr style="width: 100%; margin: 1rem 0; border-top: 1px solid var(--border-color); border-bottom: 0;">
+                        <div>
+                            <strong>CORN 양식</strong>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;" title="CORN 재고 > 재고 조회 > 재고 현황 로케이션/상품별/LOT별 메뉴에서 엑셀다운">
+                                <input type="file" id="corn-reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
+                                <button id="corn-reset-upload-button" class="btn-danger">CORN 양식으로 초기화</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+            <div id="admin-progress-container" style="padding-top: 1rem;"></div>
         </div>
-        <div class="table-wrapper" style="flex-grow: 1;">
-            <div class="table-container"></div>
-        </div>
+        <div class="table-wrapper"><div class="table-container">불러오는 중...</div></div>
     </div>`;
 
-    const searchButton = contentArea.querySelector('.search-button');
-    contentArea.querySelectorAll('.filter-input').forEach(input => {
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                searchButton.click();
-            }
-        });
-    });
-
-    await renderProductTable();
-}
-
-async function renderProductTable() {
     const tableContainer = contentArea.querySelector('.table-container');
-    if (!tableContainer) return;
-    tableContainer.innerHTML = '불러오는 중...';
-    let query = supabaseClient.from('products').select('*').eq('channel_id', currentChannelId);
-    if (currentFilters.product_code) query = query.ilike('product_code', `%${currentFilters.product_code}%`);
-    if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
-    if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
-    if (currentSort.column) { query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' }); }
+    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
+    if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
+    if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
+    
+    // '차이' 열로 정렬하는 경우 DB 정렬을 건너뜁니다.
+    if (currentSort.column && currentSort.column !== 'difference') {
+        const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
+        const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
+        query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
+    }
+    
     const { data, error } = await fetchAllWithPagination(query);
+    if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
+    
+    // '차이' 열로 정렬하는 경우 클라이언트 측에서 정렬을 수행합니다.
+    if (currentSort.column === 'difference') {
+        data.sort((a, b) => {
+            const diffA = (a.quantity || 0) - (a.expected_quantity || 0);
+            const diffB = (b.quantity || 0) - (b.expected_quantity || 0);
+            return currentSort.direction === 'asc' ? diffA - diffB : diffB - diffA;
+        });
+    }
+    
+    updateGlobalProgress();
 
-    currentProductMasterData = data || [];
-
-    if (error) { tableContainer.innerHTML = `<p>데이터 로딩 오류: ${error.message}</p>`; return; }
     if (data.length === 0) {
-        tableContainer.innerHTML = `<p style="text-align:center; padding: 2rem;">표시할 데이터가 없습니다.</p>`;
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
-        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
-        data.forEach((p, index) => { tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.id}"></td><td>${index + 1}</td><td>${p.product_code || ''}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`; });
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="products.product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th class="sortable" data-column="difference">차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
+        data.forEach((item, index) => {
+            const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
+            tableHTML += `<tr>
+                <td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td>
+                <td>${index + 1}</td>
+                <td>${item.location_code}</td>
+                <td>${item.products ? item.products.product_code : 'N/A'}</td>
+                <td>${item.barcode}</td>
+                <td>${item.products ? item.products.product_name : 'N/A'}</td>
+                <td>${expected}</td>
+                <td class="editable-quantity" data-scan-id="${item.id}">${actual}</td>
+                <td>${diff}</td>
+                <td class="scan-time">${new Date(item.created_at).toLocaleString()}</td>
+            </tr>`;
+        });
         tableHTML += '</tbody></table>';
         tableContainer.innerHTML = tableHTML;
     }
     updateSortIndicator();
 }
 
-function updateSortIndicator() {
-    const section = contentArea.querySelector('#products-section');
-    if (!section) return;
-    section.querySelectorAll('.sortable').forEach(th => {
-        th.classList.remove('asc', 'desc');
-        if (th.dataset.column === currentSort.column) {
-            th.classList.add(currentSort.direction);
-        }
+async function showProductMaster() {
+    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
+    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    
+    const tableContainer = contentArea.querySelector('.table-container');
+    let query = supabaseClient.from('products').select('*').eq('channel_id', currentChannelId);
+    if (currentFilters.product_code) query = query.ilike('product_code', `%${currentFilters.product_code}%`);
+    if (currentFilters.barcode) query = query.ilike('barcode', `%${currentFilters.barcode}%`);
+    if (currentFilters.product_name) query = query.ilike('product_name', `%${currentFilters.product_name}%`);
+    if (currentSort.column) {
+        query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    }
+    
+    const { data, error } = await fetchAllWithPagination(query);
+    if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
+    
+    if (data.length === 0) {
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
+    } else {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th></tr></thead><tbody>`;
+        data.forEach((p, index) => {
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${p.barcode}"></td><td>${index + 1}</td><td>${p.product_code || ''}</td><td>${p.barcode}</td><td>${p.product_name}</td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
+    updateSortIndicator();
+}
+
+async function showLocationMaster() {
+    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
+    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
+    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    
+    const tableContainer = contentArea.querySelector('.table-container');
+    let query = supabaseClient.from('locations').select('*').eq('channel_id', currentChannelId);
+    if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
+    if (currentSort.column) {
+        query = query.order(currentSort.column, { ascending: currentSort.direction === 'asc' });
+    }
+    
+    const { data, error } = await fetchAllWithPagination(query);
+    if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
+
+    if (data.length === 0) {
+        tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
+    } else {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션 코드</th></tr></thead><tbody>`;
+        data.forEach((loc, index) => {
+            tableHTML += `<tr><td><input type="checkbox" class="row-checkbox" data-id="${loc.location_code}"></td><td>${index + 1}</td><td>${loc.location_code}</td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
+    updateSortIndicator();
+}
+
+async function showChannelMaster() {
+    contentArea.innerHTML = `
+        <div id="channels-section" class="content-section active">
+            <div class="page-header">
+                <h2>채널 관리</h2>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                </div>
+            </div>
+            <div class="channel-management-grid">
+                <div class="card">
+                    <div class="card-header">새 채널 추가</div>
+                    <div class="card-body">
+                        <input type="text" id="new-channel-name" placeholder="새 채널 이름 입력..." style="flex-grow: 1;">
+                        <button id="add-channel-button" class="btn-primary">추가</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">채널 목록</div>
+                    <div id="channel-list-container" class="card-body" style="flex-direction: column; align-items: stretch; padding: 0;">
+                        <p style="padding: 1.25rem;">불러오는 중...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const listContainer = document.getElementById('channel-list-container');
+    const { data, error } = await supabaseClient.from('channels').select('*').order('id');
+    
+    if (error) { listContainer.innerHTML = `<p style="padding: 1.25rem;">채널 목록을 불러오는 데 실패했습니다.</p>`; return; }
+    if (data.length === 0) { listContainer.innerHTML = `<p style="padding: 1.25rem;">생성된 채널이 없습니다.</p>`; return; }
+
+    let listHTML = '<ul class="channel-list">';
+    data.forEach(channel => {
+        listHTML += `<li class="channel-list-item"><span class="channel-name">${channel.name} (ID: ${channel.id})</span><button class="delete-channel-button btn-danger" data-id="${channel.id}" data-name="${channel.name}">삭제</button></li>`;
     });
-}
-
-async function handleCornUpload() {
-    const fileInput = contentArea.querySelector('#upload-corn-file');
-    if (!fileInput.files[0]) { return alert('CORN 양식 엑셀 파일을 선택하세요.'); }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            const dataRows = rows.slice(2);
-            if (dataRows.length === 0) throw new Error('엑셀 파일에 데이터가 없습니다 (제목 행 제외).');
-            const productsToUpsert = dataRows.map(row => ({
-                product_code: row[2],
-                product_name: row[3],
-                barcode: row[10],
-                channel_id: currentChannelId
-            })).filter(p => p.barcode && p.product_name);
-            if (productsToUpsert.length === 0) { throw new Error('업로드할 유효한 상품 데이터가 없습니다. C, D, K 열에 데이터가 있는지 확인하세요.'); }
-            const { error } = await supabaseClient.from('products').upsert(productsToUpsert, { onConflict: 'barcode, channel_id' });
-            if (error) throw error;
-            alert(`총 ${productsToUpsert.length}개의 상품을 성공적으로 추가/수정했습니다.`);
-            renderProductTable();
-        } catch (error) {
-            alert('CORN 양식 업로드 실패: ' + error.message);
-        } finally {
-            fileInput.value = '';
-        }
-    };
-    reader.readAsArrayBuffer(fileInput.files[0]);
-}
-
-async function handleProductUpload() {
-    const fileInput = contentArea.querySelector('#upload-file');
-    if (!fileInput.files[0]) { return alert('업로드할 엑셀 파일을 선택하세요.'); }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-            if (jsonData.length === 0) { throw new Error('엑셀 파일에 데이터가 없습니다.'); }
-            const dataWithChannel = jsonData.map(item => ({...item, channel_id: currentChannelId }));
-            const { error } = await supabaseClient.from('products').upsert(dataWithChannel, { onConflict: 'barcode, channel_id' });
-            if (error) throw error;
-            alert('상품 마스터 업로드(추가/수정) 성공!');
-            renderProductTable();
-        } catch (error) { alert('업로드 실패: ' + error.message); } finally { fileInput.value = ''; }
-    };
-    reader.readAsArrayBuffer(fileInput.files[0]);
-}
-
-function handleProductTemplateDownload() {
-    const headers = ["product_code", "barcode", "product_name"];
-    const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
-    XLSX.writeFile(workbook, "products_template.xlsx");
-}
-
-async function handleDeleteSelectedProducts() {
-    const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
-    if (checkedBoxes.length === 0) { return alert('삭제할 항목을 선택하세요.'); }
-    if (confirm(`선택된 ${checkedBoxes.length}개의 상품을 삭제하시겠습니까?`)) {
-        const idsToDelete = Array.from(checkedBoxes).map(cb => cb.dataset.id);
-        const { error } = await supabaseClient.from('products').delete().in('id', idsToDelete);
-        if (error) { alert('삭제 실패: ' + error.message); } else { alert('선택한 상품을 삭제했습니다.'); renderProductTable(); }
-    }
-}
-
-async function fetchAllWithPagination(query, pageSize = 1000) {
-    let allData = [];
-    let page = 0;
-    while (true) {
-        const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
-        if (error) return { data: null, error };
-        if (data.length > 0) allData = allData.concat(data);
-        if (data.length < pageSize) break;
-        page++;
-    }
-    return { data: allData, error: null };
+    listHTML += '</ul>';
+    listContainer.innerHTML = listHTML;
 }
 
 async function showUserManagement() {
     contentArea.innerHTML = `
-        <div class="content-section">
+        <div id="users-section" class="content-section active">
             <div class="page-header">
                 <h2>사용자 관리</h2>
                 <div class="actions-group">
-                    <button id="refresh-users-btn" class="btn-secondary">새로고침</button>
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
                 </div>
             </div>
             <div class="card">
                 <div class="card-header">사용자 목록</div>
-                <ul id="user-list" class="management-list"></ul>
+                <div id="user-list-container" class="card-body" style="flex-direction: column; align-items: stretch; padding: 0;">
+                    <p style="padding: 1.25rem;">사용자 목록을 불러오는 중...</p>
+                </div>
             </div>
-        </div>`;
-    await loadUsers();
-}
+        </div>
+    `;
 
-async function loadUsers() {
-    const list = contentArea.querySelector('#user-list');
-    list.innerHTML = `<li>불러오는 중...</li>`;
+    const listContainer = document.getElementById('user-list-container');
     const { data, error } = await supabaseClient.rpc('list_all_users');
-    if (error) { list.innerHTML = `<li>사용자 목록 로딩 오류: ${error.message}</li>`; return; }
-    if (!data || data.length === 0) { list.innerHTML = `<li>가입한 사용자가 없습니다.</li>`; return; }
 
-    list.innerHTML = data.map(user => {
-        const isAdmin = user.user_metadata && user.user_metadata.is_admin === true;
-        const isSuperAdmin = user.email === 'eowert72@gmail.com';
-        
-        const isApproved = isAdmin || isSuperAdmin;
+    if (error) {
+        listContainer.innerHTML = `<p style="padding: 1.25rem;">사용자 목록을 불러오는 데 실패했습니다.</p>`;
+        return;
+    }
+    if (data.length === 0) {
+        listContainer.innerHTML = `<p style="padding: 1.25rem;">가입한 사용자가 없습니다.</p>`;
+        return;
+    }
 
-        const statusClass = isApproved ? 'status-approved' : 'status-pending';
-        const statusText = isApproved ? '승인 완료' : '승인 대기';
+    let listHTML = '<ul class="user-list">';
+    data.forEach(user => {
+        const statusClass = user.is_approved ? 'status-approved' : 'status-pending';
+        const statusText = user.is_approved ? '승인 완료' : '승인 대기';
         
         let actionButton = '';
-        if (!isAdmin && !isSuperAdmin) {
-            actionButton = `<button class="btn-approve approve-user-button" data-id="${user.id}">승인</button>`;
+        if (!user.is_approved) {
+            actionButton = `<button class="approve-user-button btn-primary" data-id="${user.id}" data-email="${user.email}">승인</button>`;
         }
 
-        return `<li class="management-list-item">
-                    <span>${user.email}</span>
-                    <div>
-                        <span class="user-status ${statusClass}">${statusText}</span>
-                        ${actionButton}
-                    </div>
-                </li>`;
-    }).join('');
+        listHTML += `<li class="user-list-item"><span class="user-info">${user.email}</span><div><span class="user-status ${statusClass}">${statusText}</span>${actionButton}</div></li>`;
+    });
+    listHTML += '</ul>';
+    listContainer.innerHTML = listHTML;
+}
+
+function updateSortIndicator() {
+    contentArea.querySelectorAll('th.sortable').forEach(th => {
+        const icon = th.querySelector('.sort-icon');
+        if (icon) icon.remove();
+        
+        if (th.dataset.column === currentSort.column) {
+            if (!currentSort.isDefault) {
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'sort-icon';
+                iconSpan.textContent = currentSort.direction === 'asc' ? ' ▲' : ' ▼';
+                th.appendChild(iconSpan);
+            }
+        }
+    });
+}
+
+function downloadExcel(data, filename) {
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, filename);
+}
+
+function downloadTemplateExcel(headers, filename) {
+    const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, filename);
+}
+
+async function uploadData(tableName, onConflictColumn, file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+            if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
+            
+            const dataToUpsert = jsonData.map(row => ({ ...row, channel_id: currentChannelId }));
+            
+            const { error } = await supabaseClient.from(tableName).upsert(dataToUpsert, { onConflict: onConflictColumn });
+            if (error) { throw error; }
+            alert('업로드 성공!');
+            refreshCurrentView();
+        } catch (error) {
+            alert('업로드 실패: ' + error.message);
+            console.error(error);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function uploadCornData(file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (rows.length < 3) {
+                alert('업로드할 데이터가 없습니다.');
+                return;
+            }
+            const dataRows = rows.slice(2);
+
+            const formattedData = dataRows.map(row => {
+                const product_code = row[2] ? String(row[2]).trim() : null;
+                const product_name = row[3] ? String(row[3]).trim() : null;
+                const barcode = row[10] ? String(row[10]).trim() : null;
+
+                if (!product_name || (!product_code && !barcode)) {
+                    return null;
+                }
+
+                return {
+                    product_code: product_code || barcode,
+                    barcode: barcode || product_code,
+                    product_name: product_name,
+                    channel_id: currentChannelId
+                };
+            }).filter(item => item !== null);
+
+            if (formattedData.length === 0) {
+                alert('추출할 유효한 데이터가 없습니다. C, D, K열을 확인해주세요.');
+                return;
+            }
+
+            const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode, channel_id' });
+
+            if (error) { throw error; }
+
+            alert(`총 ${formattedData.length}개의 상품을 성공적으로 업로드했습니다.`);
+            refreshCurrentView();
+
+        } catch (error) {
+            alert('CORN 양식 업로드 실패: ' + error.message);
+            console.error(error);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function uploadCornLocations(file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (rows.length < 2) {
+                alert('업로드할 데이터가 없습니다.');
+                return;
+            }
+            const dataRows = rows.slice(1);
+
+            const locationCodes = dataRows.map(row => (row[2] ? String(row[2]).trim() : null)).filter(code => code);
+
+            if (locationCodes.length === 0) {
+                alert('추출할 유효한 로케이션 데이터가 없습니다. C열을 확인해주세요.');
+                return;
+            }
+            
+            const uniqueLocationCodesInFile = [...new Set(locationCodes)];
+
+            const formattedData = uniqueLocationCodesInFile.map(code => ({
+                location_code: code,
+                channel_id: currentChannelId
+            }));
+
+            const { error } = await supabaseClient
+                .from('locations')
+                .upsert(formattedData, { onConflict: 'location_code, channel_id' });
+
+            if (error) { throw error; }
+
+            alert(`총 ${formattedData.length}개의 로케이션을 성공적으로 처리했습니다.`);
+            refreshCurrentView();
+
+        } catch (error) {
+            alert('CORN 로케이션 양식 업로드 실패: ' + error.message);
+            console.error(error);
+        }
+    };
+    reader.readAsArrayBuffer(file);
 }
 
 
-async function handleApproveUser(e) {
-    const userId = e.target.dataset.id;
-    if (confirm('이 사용자를 승인하고 관리자 권한을 부여하시겠습니까?')) {
-        const { data, error } = await supabaseClient.rpc('approve_and_grant_admin', {
-            user_id_to_approve: userId
-        });
+async function handleResetAndUpload(file) {
+    if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    if (!confirm(`현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?`)) return;
+    if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
-        if (error) {
-            alert('승인 실패: ' + error.message);
-        } else {
-            alert(data || '사용자가 승인되었습니다.');
-            showUserManagement();
+    try {
+        const { error: deleteError } = await supabaseClient
+            .from('inventory_scans')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('channel_id', currentChannelId)
+            .is('deleted_at', null);
+            
+        if (deleteError) throw new Error('데이터 삭제 중 오류 발생: ' + deleteError.message);
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+                if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
+                
+                const dataToInsert = jsonData.map(row => ({
+                    location_code: row.location_code,
+                    barcode: row.barcode,
+                    expected_quantity: row.expected_quantity,
+                    quantity: 0,
+                    channel_id: currentChannelId
+                }));
+                const { error: insertError } = await supabaseClient.from('inventory_scans').insert(dataToInsert);
+                if (insertError) throw insertError;
+                alert('전체 초기화 및 업로드 성공!');
+                refreshCurrentView();
+            } catch (uploadError) {
+                alert('새 데이터 업로드 실패: ' + uploadError.message);
+                console.error(uploadError);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (error) {
+        alert('작업 실패: ' + error.message);
+        console.error(error);
+    }
+}
+
+async function handleCornResetAndUpload(file) {
+    if (!file) {
+        alert('업로드할 CORN 양식 파일을 선택하세요.');
+        return;
+    }
+    if (!confirm(`[CORN 양식] 현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제하고 CORN 양식으로 새로 업로드합니다. 계속하시겠습니까?`)) {
+        return;
+    }
+    if (!confirm("이 작업은 되돌릴 수 없습니다. 정말로 진행하시겠습니까?")) {
+        return;
+    }
+
+    try {
+        const { error: deleteError } = await supabaseClient
+            .from('inventory_scans')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('channel_id', currentChannelId)
+            .is('deleted_at', null);
+
+        if (deleteError) {
+            throw new Error('기존 데이터 삭제 중 오류 발생: ' + deleteError.message);
+        }
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (rows.length < 2) {
+                     alert('업로드할 데이터가 없습니다. (제목 행 제외)');
+                     return;
+                }
+
+                const dataRows = rows.slice(1);
+                
+                // 데이터를 집계하기 위한 객체
+                const aggregatedData = {};
+
+                dataRows.forEach(row => {
+                    // '합계' 행이거나 유효하지 않은 행은 건너뜁니다.
+                    if (!row || (row[2] && String(row[2]).includes('합계'))) {
+                        return;
+                    }
+                    
+                    const location = row[3] ? String(row[3]).trim() : null; // D열: 로케이션
+                    const barcode = row[5] ? String(row[5]).trim() : null;  // F열: 바코드
+                    const quantity = row[8]; // I열: 현재고
+
+                    // 필수 데이터가 없는 경우 건너뜁니다.
+                    if (!location || !barcode) {
+                        return;
+                    }
+                    
+                    // 고유 키 생성 (로케이션 + 바코드)
+                    const key = `${location}___${barcode}`;
+                    const currentQuantity = Number(quantity) || 0;
+
+                    if (aggregatedData[key]) {
+                        // 이미 키가 존재하면 수량을 더합니다.
+                        aggregatedData[key].expected_quantity += currentQuantity;
+                    } else {
+                        // 키가 없으면 새로 추가합니다.
+                        aggregatedData[key] = {
+                            location_code: location,
+                            barcode: barcode,
+                            expected_quantity: currentQuantity,
+                            quantity: 0,
+                            channel_id: currentChannelId
+                        };
+                    }
+                });
+                
+                // 집계된 객체를 배열로 변환합니다.
+                const dataToInsert = Object.values(aggregatedData);
+
+
+                if (dataToInsert.length === 0) {
+                    alert("업로드할 유효한 데이터가 없습니다. 엑셀 파일의 D, F, I열 데이터와 '합계' 행을 확인해주세요.");
+                    return;
+                }
+
+                const { error: insertError } = await supabaseClient.from('inventory_scans').insert(dataToInsert);
+                if (insertError) {
+                    throw insertError;
+                }
+                
+                alert(`CORN 양식을 통해 총 ${dataToInsert.length}개의 데이터를 성공적으로 초기화 및 업로드했습니다!`);
+                refreshCurrentView();
+
+            } catch (uploadError) {
+                alert('새 데이터 업로드 실패: ' + uploadError.message);
+                console.error(uploadError);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (error) {
+        alert('작업 실패: ' + error.message);
+        console.error(error);
+    }
+}
+
+
+async function deleteSelected(tableName, primaryKeyColumn) {
+    const checkedBoxes = contentArea.querySelectorAll('.row-checkbox:checked');
+    if (checkedBoxes.length === 0) {
+        alert('삭제할 항목을 선택하세요.');
+        return;
+    }
+
+    const idsToDelete = Array.from(checkedBoxes)
+        .map(box => box.dataset.id)
+        .filter(id => id); 
+
+    if (idsToDelete.length === 0) {
+        alert('선택한 항목 중에 유효한 ID가 없습니다.');
+        return;
+    }
+
+    if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
+        try {
+            const chunkSize = 500;
+            for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+                const chunk = idsToDelete.slice(i, i + chunkSize);
+
+                let query;
+                if (tableName === 'inventory_scans') {
+                    query = supabaseClient
+                        .from(tableName)
+                        .update({ deleted_at: new Date().toISOString() });
+                } else {
+                    query = supabaseClient.from(tableName).delete();
+                }
+
+                if (tableName === 'locations' || tableName === 'products') {
+                    query = query.eq('channel_id', currentChannelId);
+                }
+
+                const { error } = await query.in(primaryKeyColumn, chunk);
+
+                if (error) {
+                    throw error;
+                }
+            }
+
+            alert('선택한 항목이 삭제되었습니다.');
+            refreshCurrentView();
+
+        } catch (error) {
+            alert('삭제 실패: ' + error.message);
+            console.error(error);
         }
     }
 }
+
+function handleNavClick(event) {
+    navButtons.forEach(btn => btn.classList.remove('active'));
+    const clickedButton = event.target;
+    clickedButton.classList.add('active');
+    const navId = clickedButton.id;
+    
+    contentArea.innerHTML = `<h2>${clickedButton.textContent} 화면을 불러오는 중...</h2>`;
+    currentFilters = {};
+    if (navId === 'nav-inventory') {
+        currentSort = { column: 'created_at', direction: 'desc', defaultColumn: 'created_at', defaultDirection: 'desc', isDefault: true };
+        showInventoryStatus();
+    } else if (navId === 'nav-products') {
+        currentSort = { column: 'barcode', direction: 'asc', defaultColumn: 'barcode', defaultDirection: 'asc', isDefault: true };
+        showProductMaster();
+    } else if (navId === 'nav-locations') {
+        currentSort = { column: 'location_code', direction: 'asc', defaultColumn: 'location_code', defaultDirection: 'asc', isDefault: true };
+        showLocationMaster();
+    } else if (navId === 'nav-channels') {
+        showChannelMaster();
+    } else if (navId === 'nav-users') {
+        showUserManagement();
+    }
+}
+
+contentArea.addEventListener('click', async function(event) {
+    const target = event.target;
+    const section = target.closest('.content-section');
+    if (!section) return;
+
+    if (target.classList.contains('refresh-view-button')) {
+        refreshCurrentView();
+        return;
+    }
+
+    if (target.classList.contains('sortable')) {
+        const newSortColumn = target.dataset.column;
+        if (currentSort.column === newSortColumn && !currentSort.isDefault) {
+            if (currentSort.direction === 'desc') {
+                currentSort.direction = 'asc';
+                currentSort.isDefault = false;
+            } else {
+                currentSort.column = currentSort.defaultColumn;
+                currentSort.direction = currentSort.defaultDirection;
+                currentSort.isDefault = true;
+            }
+        } else {
+            currentSort.column = newSortColumn;
+            currentSort.direction = 'desc';
+            currentSort.isDefault = false;
+        }
+        refreshCurrentView();
+        return;
+    }
+    
+    const sectionId = section.id;
+    let tableName, primaryKey, fileName;
+
+    if (sectionId === 'products-section') {
+        tableName = 'products';
+        primaryKey = 'barcode';
+        fileName = 'products';
+    } else if (sectionId === 'locations-section') {
+        tableName = 'locations'; 
+        primaryKey = 'location_code';
+        fileName = 'locations';
+    }
+    
+    if (target.classList.contains('search-button')) {
+        currentFilters = {};
+        if (sectionId === 'inventory-section') {
+            currentFilters.location_code = document.getElementById('filter-location').value.trim();
+            currentFilters.barcode = document.getElementById('filter-barcode').value.trim();
+        } else if (sectionId === 'products-section') {
+            currentFilters.product_code = document.getElementById('filter-prod-code').value.trim();
+            currentFilters.barcode = document.getElementById('filter-prod-barcode').value.trim();
+            currentFilters.product_name = document.getElementById('filter-prod-name').value.trim();
+        } else if (sectionId === 'locations-section') {
+            currentFilters.location_code = document.getElementById('filter-loc-code').value.trim();
+        }
+        refreshCurrentView();
+    }
+    else if (target.classList.contains('reset-button')) {
+        currentFilters = {};
+        refreshCurrentView();
+    }
+    else if (target.id === 'add-channel-button') {
+        const input = document.getElementById('new-channel-name');
+        const newName = input.value.trim();
+        if (!newName) { alert('채널 이름을 입력하세요.'); return; }
+        const { error } = await supabaseClient.from('channels').insert({ name: newName });
+        if (error) {
+            alert('채널 추가 실패: ' + error.message);
+        } else {
+            alert(`'${newName}' 채널이 추가되었습니다.`);
+            await populateChannelSwitcher();
+            showChannelMaster();
+        }
+    }
+    else if (target.classList.contains('delete-channel-button')) {
+        const channelId = target.dataset.id;
+        const channelName = target.dataset.name;
+        if (confirm(`'${channelName}' 채널을 정말로 삭제하시겠습니까?\n\n⚠️ 경고: 이 채널에 속한 모든 로케이션, 상품, 재고실사 데이터가 함께 삭제됩니다.`)) {
+            const { error } = await supabaseClient.from('channels').delete().eq('id', channelId);
+            if (error) {
+                alert('채널 삭제 실패: ' + error.message);
+            } else {
+                alert(`'${channelName}' 채널이 삭제되었습니다.`);
+                if (currentChannelId === channelId) {
+                    localStorage.removeItem('selectedAdminChannelId');
+                    currentChannelId = null;
+                }
+                await populateChannelSwitcher();
+                showChannelMaster();
+            }
+        }
+    }
+    else if (target.classList.contains('approve-user-button')) {
+        const userId = target.dataset.id;
+        const userEmail = target.dataset.email;
+        if (confirm(`'${userEmail}' 사용자를 승인하시겠습니까?`)) {
+            const { error } = await supabaseClient.rpc('approve_user', { user_id_to_approve: userId });
+            if (error) {
+                alert('사용자 승인 실패: ' + error.message);
+            } else {
+                alert(`'${userEmail}' 사용자가 승인되었습니다.`);
+                showUserManagement();
+            }
+        }
+    }
+    else if (target.id === 'reset-template-download') {
+        downloadTemplateExcel(['location_code', 'barcode', 'expected_quantity'], 'inventory_reset_template.xlsx');
+    }
+    else if (target.id === 'reset-upload-button') {
+        const fileInput = document.getElementById('reset-upload-file');
+        handleResetAndUpload(fileInput.files[0]);
+    }
+    else if (target.id === 'corn-reset-upload-button') {
+        const fileInput = document.getElementById('corn-reset-upload-file');
+        handleCornResetAndUpload(fileInput.files[0]);
+    }
+    else if (target.id === 'upload-corn-button') {
+        const fileInput = document.getElementById('upload-corn-file');
+        uploadCornData(fileInput.files[0]);
+    }
+    else if (target.id === 'upload-corn-locations-button') {
+        const fileInput = document.getElementById('upload-corn-locations-file');
+        uploadCornLocations(fileInput.files[0]);
+    }
+    else if (target.classList.contains('delete-selected')) {
+        const tableMap = { 'inventory-section': 'inventory_scans', 'products-section': 'products', 'locations-section': 'locations' };
+        const pkMap = { 'inventory-section': 'id', 'products-section': 'barcode', 'locations-section': 'location_code' };
+        deleteSelected(tableMap[sectionId], pkMap[sectionId]);
+    } 
+    else if (target.classList.contains('download-template')) {
+        if (sectionId === 'products-section') downloadTemplateExcel(['product_code', 'barcode', 'product_name'], 'products_template.xlsx');
+        else if (sectionId === 'locations-section') downloadTemplateExcel(['location_code'], 'locations_template.xlsx');
+    }
+    else if (target.classList.contains('upload-data')) {
+        const fileInput = section.querySelector('.upload-file');
+        let onConflictKey = '';
+        if (sectionId === 'products-section') {
+            onConflictKey = ['barcode', 'channel_id'];
+        } else if (sectionId === 'locations-section') {
+            onConflictKey = ['location_code', 'channel_id'];
+        }
+        uploadData(tableName, onConflictKey, fileInput.files[0]);
+    }
+    else if (target.classList.contains('download-excel')) {
+        alert('전체 데이터를 다운로드합니다. 데이터 양에 따라 시간이 걸릴 수 있습니다.');
+        const tableToDownload = sectionId === 'inventory-section' ? 'inventory_scans' : tableName;
+        
+        if (tableToDownload === 'inventory_scans') {
+             const query = supabaseClient.from('inventory_scans').select(`*, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
+             const { data: inventoryData, error } = await fetchAllWithPagination(query);
+             if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
+             const flattenedData = inventoryData.map((item, index) => ({
+                'No.': index + 1,
+                '로케이션': item.location_code,
+                '상품코드': item.products ? item.products.product_code : 'N/A',
+                '바코드': item.barcode,
+                '상품명': item.products ? item.products.product_name : 'N/A',
+                '전산수량': item.expected_quantity || 0,
+                '실사수량': item.quantity || 0,
+                '차이': (item.quantity || 0) - (item.expected_quantity || 0),
+                '마지막 스캔': new Date(item.created_at).toLocaleString()
+            }));
+            downloadExcel(flattenedData, 'inventory_status.xlsx');
+        } else {
+            const query = supabaseClient.from(tableToDownload).select('*').eq('channel_id', currentChannelId);
+            const { data, error } = await fetchAllWithPagination(query);
+            if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
+            const numberedData = data.map((item, index) => ({'No.': index + 1, ...item}));
+            downloadExcel(numberedData, `${fileName}_master.xlsx`);
+        }
+    }
+});
+
+contentArea.addEventListener('dblclick', function(e) {
+    const cell = e.target;
+    if (!cell.classList.contains('editable-quantity') || cell.querySelector('input')) {
+        return;
+    }
+
+    const scanId = cell.dataset.scanId;
+    const originalValue = cell.textContent.trim();
+    
+    cell.innerHTML = `<input type="number" class="quantity-edit-input" value="${originalValue}" style="width: 80px; text-align: right;">`;
+    
+    const input = cell.querySelector('input');
+    input.focus();
+    input.select();
+
+    const handleSave = async () => {
+        const newValue = input.value.trim();
+
+        if (newValue === originalValue) {
+            cell.textContent = originalValue;
+            return;
+        }
+
+        if (newValue === '' || isNaN(newValue) || Number(newValue) < 0) {
+            alert('유효한 숫자를 입력하세요.');
+            cell.textContent = originalValue;
+            return;
+        }
+
+        try {
+            const { error } = await supabaseClient
+                .from('inventory_scans')
+                .update({ 
+                    quantity: Number(newValue),
+                    created_at: new Date().toISOString()
+                })
+                .eq('id', scanId);
+            
+            if (error) throw error;
+
+            cell.textContent = newValue;
+            const row = cell.closest('tr');
+            if (row) {
+                row.querySelector('.scan-time').textContent = new Date().toLocaleString();
+                const expectedQty = parseInt(row.cells[6].textContent, 10);
+                const diffCell = row.cells[8];
+                diffCell.textContent = Number(newValue) - expectedQty;
+            }
+            
+            alert('수량이 성공적으로 수정되었습니다.');
+            updateGlobalProgress();
+
+        } catch (error) {
+            alert('수량 업데이트 실패: ' + error.message);
+            cell.textContent = originalValue;
+        }
+    };
+
+    input.addEventListener('blur', handleSave, { once: true });
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            input.blur();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            input.removeEventListener('blur', handleSave);
+            cell.textContent = originalValue;
+        }
+    });
+});
+
+
+contentArea.addEventListener('change', function(event) {
+    if (event.target.classList.contains('select-all-checkbox')) {
+        const isChecked = event.target.checked;
+        const allRowCheckboxes = event.target.closest('table').querySelectorAll('.row-checkbox');
+        allRowCheckboxes.forEach(box => box.checked = isChecked);
+    }
+});
+
+contentArea.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    if (e.target.classList.contains('filter-input')) {
+        e.preventDefault();
+        e.target.closest('.card-body').querySelector('.search-button').click();
+    } else if (e.target.id === 'new-channel-name') {
+        e.preventDefault();
+        document.getElementById('add-channel-button').click();
+    }
+});
+
+document.getElementById('home-button').addEventListener('click', showHomepage);
+
+channelSwitcher.addEventListener('change', () => {
+    currentChannelId = channelSwitcher.value;
+    localStorage.setItem('selectedAdminChannelId', currentChannelId);
+    
+    const activeNav = document.querySelector('nav button.active');
+    if (activeNav) {
+        refreshCurrentView();
+    } else {
+        showHomepage();
+    }
+});
 
 logoutButton.addEventListener('click', async () => {
     if (confirm('로그아웃하시겠습니까?')) {
-        await supabaseClient.auth.signOut();
-        window.location.href = 'login.html';
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) {
+            alert('로그아웃 실패: ' + error.message);
+        } else {
+            localStorage.removeItem('selectedAdminChannelId');
+            window.location.href = 'login.html';
+        }
     }
 });
+
+navButtons.forEach(button => button.addEventListener('click', handleNavClick));
