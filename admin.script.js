@@ -239,7 +239,7 @@ async function showInventoryStatus() {
                     <div class="card-header">필터 및 검색</div>
                     <div class="card-body">
                         <input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}">
-                        <input type="text" id="filter-barcode" class="filter-input" placeholder="바코드/상품코드 검색..." value="${currentFilters.barcode || ''}">
+                        <input type="text" id="filter-product" class="filter-input" placeholder="바코드/상품코드/상품명 검색..." value="${currentFilters.product_search || ''}">
                         <button class="search-button btn-primary">검색</button>
                         <button class="reset-button btn-secondary">초기화</button>
                     </div>
@@ -278,44 +278,75 @@ async function showInventoryStatus() {
     </div>`;
 
     const tableContainer = contentArea.querySelector('.table-container');
-    let query = supabaseClient.from('inventory_scans').select(`id, created_at, location_code, barcode, quantity, expected_quantity, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
-    if (currentFilters.location_code) query = query.ilike('location_code', `%${currentFilters.location_code}%`);
-    if (currentFilters.barcode) query.or(`barcode.ilike.%${currentFilters.barcode}%,products.product_code.ilike.%${currentFilters.barcode}%`, { foreignTable: 'products' });
     
-    // '차이' 열로 정렬하는 경우 DB 정렬을 건너뜁니다.
-    if (currentSort.column && currentSort.column !== 'difference') {
-        const sortColumn = currentSort.column.includes('.') ? currentSort.column.split('.')[1] : currentSort.column;
-        const foreignTable = currentSort.column.includes('.') ? currentSort.column.split('.')[0] : undefined;
-        query = query.order(sortColumn, { ascending: currentSort.direction === 'asc', foreignTable: foreignTable });
+    const { data, error } = await supabaseClient.rpc('get_inventory_status', {
+        channel_id_param: currentChannelId
+    });
+
+    if (error) { 
+        tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; 
+        return; 
     }
+
+    let filteredData = data;
     
-    const { data, error } = await fetchAllWithPagination(query);
-    if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다: ${error.message}</p>`; return; }
-    
-    // '차이' 열로 정렬하는 경우 클라이언트 측에서 정렬을 수행합니다.
-    if (currentSort.column === 'difference') {
-        data.sort((a, b) => {
-            const diffA = (a.quantity || 0) - (a.expected_quantity || 0);
-            const diffB = (b.quantity || 0) - (b.expected_quantity || 0);
-            return currentSort.direction === 'asc' ? diffA - diffB : diffB - diffA;
+    const locationSearchTerm = currentFilters.location_code;
+    if (locationSearchTerm) {
+        filteredData = filteredData.filter(item => item.location_code.toLowerCase().includes(locationSearchTerm.toLowerCase()));
+    }
+
+    const productSearchTerm = currentFilters.product_search;
+    if (productSearchTerm) {
+        const searchTerm = productSearchTerm.toLowerCase();
+
+        const { data: matchingProducts, error: productError } = await supabaseClient
+            .from('products')
+            .select('product_code')
+            .eq('channel_id', currentChannelId)
+            .ilike('barcode', `%${searchTerm}%`);
+        
+        const matchedProductCodes = new Set(matchingProducts ? matchingProducts.map(p => p.product_code) : []);
+
+        filteredData = filteredData.filter(item => 
+            (item.product_name && item.product_name.toLowerCase().includes(searchTerm)) ||
+            (item.product_code && item.product_code.toLowerCase().includes(searchTerm)) ||
+            (item.barcode && item.barcode.toLowerCase().includes(searchTerm)) ||
+            (matchedProductCodes.has(item.product_code))
+        );
+    }
+
+    if (currentSort.column) {
+         filteredData.sort((a, b) => {
+            let valA, valB;
+            if (currentSort.column === 'difference') {
+                valA = (a.quantity || 0) - (a.expected_quantity || 0);
+                valB = (b.quantity || 0) - (b.expected_quantity || 0);
+            } else {
+                 valA = a[currentSort.column] || '';
+                 valB = b[currentSort.column] || '';
+            }
+
+            if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+            return 0;
         });
     }
-    
+
     updateGlobalProgress();
 
-    if (data.length === 0) {
+    if (filteredData.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
-        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="products.product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="products.product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th class="sortable" data-column="difference">차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
-        data.forEach((item, index) => {
+        let tableHTML = `<table><thead><tr><th><input type="checkbox" class="select-all-checkbox"></th><th>No.</th><th class="sortable" data-column="location_code">로케이션</th><th class="sortable" data-column="product_code">상품코드</th><th class="sortable" data-column="barcode">바코드</th><th class="sortable" data-column="product_name">상품명</th><th class="sortable" data-column="expected_quantity">전산수량</th><th class="sortable" data-column="quantity">실사수량</th><th class="sortable" data-column="difference">차이</th><th class="sortable" data-column="created_at">마지막 스캔</th></tr></thead><tbody>`;
+        filteredData.forEach((item, index) => {
             const expected = item.expected_quantity || 0, actual = item.quantity || 0, diff = actual - expected;
             tableHTML += `<tr>
                 <td><input type="checkbox" class="row-checkbox" data-id="${item.id}"></td>
                 <td>${index + 1}</td>
                 <td>${item.location_code}</td>
-                <td>${item.products ? item.products.product_code : 'N/A'}</td>
-                <td>${item.barcode}</td>
-                <td>${item.products ? item.products.product_name : 'N/A'}</td>
+                <td>${item.product_code}</td>
+                <td>${item.barcode || 'N/A'}</td>
+                <td>${item.product_name || 'N/A'}</td>
                 <td>${expected}</td>
                 <td class="editable-quantity" data-scan-id="${item.id}">${actual}</td>
                 <td>${diff}</td>
@@ -329,11 +360,24 @@ async function showInventoryStatus() {
 }
 
 async function showProductMaster() {
-    contentArea.innerHTML = `<div id="products-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>상품 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
-    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
-    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    contentArea.innerHTML = `<div id="products-section" class="content-section active">
+        <div class="sticky-controls">
+            <div class="page-header">
+                <h2>상품 마스터 관리</h2>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                </div>
+            </div>
+            <div class="control-grid">
+                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+                <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+                <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
+            </div>
+        </div>
+        <div id="record-count-container" style="text-align: left; padding: 0.5rem 0 0 0.5rem;"></div>
+        <div class="table-wrapper"><div class="table-container">불러오는 중...</div></div>
+    </div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('products').select('*').eq('channel_id', currentChannelId);
@@ -347,6 +391,12 @@ async function showProductMaster() {
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
     
+    // 데이터 건수 표시
+    const recordCountContainer = contentArea.querySelector('#record-count-container');
+    if (recordCountContainer) {
+        recordCountContainer.innerHTML = `<strong>총 ${data.length.toLocaleString()} 건</strong>`;
+    }
+
     if (data.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
     } else {
@@ -361,11 +411,24 @@ async function showProductMaster() {
 }
 
 async function showLocationMaster() {
-    contentArea.innerHTML = `<div id="locations-section" class="content-section active"><div class="sticky-controls"><div class="page-header"><h2>로케이션 마스터 관리</h2><div class="actions-group"><button class="refresh-view-button btn-secondary">새로고침</button><button class="download-excel btn-primary">엑셀 다운로드</button></div></div><div class="control-grid">
-    <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-    <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-    <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
-    </div><div id="admin-progress-container"></div></div><div class="table-wrapper"><div class="table-container">불러오는 중...</div></div></div>`;
+    contentArea.innerHTML = `<div id="locations-section" class="content-section active">
+        <div class="sticky-controls">
+            <div class="page-header">
+                <h2>로케이션 마스터 관리</h2>
+                <div class="actions-group">
+                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                </div>
+            </div>
+            <div class="control-grid">
+                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
+                <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
+                <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
+            </div>
+        </div>
+        <div id="record-count-container" style="text-align: left; padding: 0.5rem 0 0 0.5rem;"></div>
+        <div class="table-wrapper"><div class="table-container">불러오는 중...</div></div>
+    </div>`;
     
     const tableContainer = contentArea.querySelector('.table-container');
     let query = supabaseClient.from('locations').select('*').eq('channel_id', currentChannelId);
@@ -376,6 +439,12 @@ async function showLocationMaster() {
     
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
+
+    // 데이터 건수 표시
+    const recordCountContainer = contentArea.querySelector('#record-count-container');
+    if (recordCountContainer) {
+        recordCountContainer.innerHTML = `<strong>총 ${data.length.toLocaleString()} 건</strong>`;
+    }
 
     if (data.length === 0) {
         tableContainer.innerHTML = `<p class="no-data-message">표시할 데이터가 없습니다.</p>`;
@@ -509,24 +578,94 @@ function downloadTemplateExcel(headers, filename) {
 
 async function uploadData(tableName, onConflictColumn, file) {
     if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const loader = document.getElementById('loading-overlay');
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
+            loader.style.display = 'flex';
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-            if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
-            
-            const dataToUpsert = jsonData.map(row => ({ ...row, channel_id: currentChannelId }));
-            
-            const { error } = await supabaseClient.from(tableName).upsert(dataToUpsert, { onConflict: onConflictColumn });
-            if (error) { throw error; }
-            alert('업로드 성공!');
+            if (jsonData.length === 0) {
+                alert('엑셀 파일에 데이터가 없습니다.');
+                return;
+            }
+
+            if (tableName === 'products') {
+                const barcodeMap = new Map();
+                const duplicates = [];
+                jsonData.forEach(row => {
+                    const product_code = row.product_code ? String(row.product_code).trim() : null;
+                    const barcode = row.barcode ? String(row.barcode).trim() : null;
+                    const finalBarcode = barcode || product_code;
+
+                    if (barcodeMap.has(finalBarcode)) {
+                        if (!duplicates.includes(finalBarcode)) {
+                            duplicates.push(finalBarcode);
+                        }
+                    } else {
+                        barcodeMap.set(finalBarcode, true);
+                    }
+                });
+
+                if (duplicates.length > 0) {
+                    throw new Error(`업로드를 중단했습니다. 엑셀 파일에 중복된 바코드가 존재합니다:\n\n${duplicates.join('\n')}\n\n엑셀 파일을 수정 후 다시 시도해주세요.`);
+                }
+                
+                const productMap = new Map();
+                jsonData.forEach(row => {
+                    const product_code = row.product_code ? String(row.product_code).trim() : null;
+                    const product_name = row.product_name ? String(row.product_name).trim() : null;
+                    const barcode = row.barcode ? String(row.barcode).trim() : null;
+
+                    if (!product_code || !product_name) return;
+                    
+                    const finalBarcode = barcode || product_code;
+
+                    if (productMap.has(product_code)) {
+                        productMap.get(product_code).barcodes.add(finalBarcode);
+                    } else {
+                        productMap.set(product_code, {
+                            product_name: product_name,
+                            barcodes: new Set([finalBarcode])
+                        });
+                    }
+                });
+
+                if (productMap.size === 0) {
+                    alert('업로드할 유효한 상품 데이터가 없습니다.');
+                    return;
+                }
+
+                let totalUpsertedCount = 0;
+                for (const [product_code, data] of productMap.entries()) {
+                    for (const barcode of data.barcodes) {
+                        const { error } = await supabaseClient.from('products').upsert({
+                            product_code: product_code,
+                            product_name: data.product_name,
+                            barcode: barcode,
+                            channel_id: currentChannelId
+                        }, { onConflict: 'barcode, channel_id' });
+                        if (error) throw error;
+                        totalUpsertedCount++;
+                    }
+                }
+                alert(`총 ${totalUpsertedCount}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
+
+            } else {
+                const dataToUpsert = jsonData.map(row => ({ ...row, channel_id: currentChannelId }));
+                const { error } = await supabaseClient.from(tableName).upsert(dataToUpsert, { onConflict: onConflictColumn });
+                if (error) { throw error; }
+                alert('업로드 성공!');
+            }
+
             refreshCurrentView();
         } catch (error) {
             alert('업로드 실패: ' + error.message);
             console.error(error);
+        } finally {
+            loader.style.display = 'none';
         }
     };
     reader.readAsArrayBuffer(file);
@@ -534,14 +673,15 @@ async function uploadData(tableName, onConflictColumn, file) {
 
 async function uploadCornData(file) {
     if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const loader = document.getElementById('loading-overlay');
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
+            loader.style.display = 'flex';
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-
             const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             
             if (rows.length < 3) {
@@ -550,48 +690,91 @@ async function uploadCornData(file) {
             }
             const dataRows = rows.slice(2);
 
-            const formattedData = dataRows.map(row => {
+            const barcodeMap = new Map();
+            const duplicates = [];
+            dataRows.forEach(row => {
+                const product_code = row[2] ? String(row[2]).trim() : null;
+                const barcode = row[10] ? String(row[10]).trim() : null;
+                const finalBarcode = barcode || product_code;
+
+                if (!finalBarcode) return;
+
+                if (barcodeMap.has(finalBarcode)) {
+                    if (!duplicates.includes(finalBarcode)) {
+                        duplicates.push(finalBarcode);
+                    }
+                } else {
+                    barcodeMap.set(finalBarcode, true);
+                }
+            });
+
+            if (duplicates.length > 0) {
+                throw new Error(`업로드를 중단했습니다. 엑셀 파일에 중복된 바코드가 존재합니다:\n\n${duplicates.join('\n')}\n\n엑셀 파일을 수정 후 다시 시도해주세요.`);
+            }
+
+            const productMap = new Map();
+            dataRows.forEach(row => {
                 const product_code = row[2] ? String(row[2]).trim() : null;
                 const product_name = row[3] ? String(row[3]).trim() : null;
                 const barcode = row[10] ? String(row[10]).trim() : null;
 
-                if (!product_name || (!product_code && !barcode)) {
-                    return null;
+                if (!product_code || !product_name) return;
+
+                const finalBarcode = barcode || product_code;
+
+                if (productMap.has(product_code)) {
+                    productMap.get(product_code).barcodes.add(finalBarcode);
+                } else {
+                    productMap.set(product_code, {
+                        product_name: product_name,
+                        barcodes: new Set([finalBarcode])
+                    });
                 }
-
-                return {
-                    product_code: product_code || barcode,
-                    barcode: barcode || product_code,
-                    product_name: product_name,
-                    channel_id: currentChannelId
-                };
-            }).filter(item => item !== null);
-
-            if (formattedData.length === 0) {
+            });
+            
+            if (productMap.size === 0) {
                 alert('추출할 유효한 데이터가 없습니다. C, D, K열을 확인해주세요.');
                 return;
             }
 
-            const { error } = await supabaseClient.from('products').upsert(formattedData, { onConflict: 'barcode, channel_id' });
+            let totalUpsertedCount = 0;
+            for (const [product_code, data] of productMap.entries()) {
+                for (const barcode of data.barcodes) {
+                    const { error } = await supabaseClient.from('products').upsert({
+                        product_code: product_code,
+                        product_name: data.product_name,
+                        barcode: barcode,
+                        channel_id: currentChannelId
+                    }, { onConflict: 'barcode, channel_id' });
 
-            if (error) { throw error; }
+                    if (error) {
+                        throw new Error(`'${product_code}' 상품의 바코드(${barcode}) 업로드 중 오류 발생: ${error.message}`);
+                    }
+                    totalUpsertedCount++;
+                }
+            }
 
-            alert(`총 ${formattedData.length}개의 상품을 성공적으로 업로드했습니다.`);
+            alert(`총 ${totalUpsertedCount}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
             refreshCurrentView();
 
         } catch (error) {
-            alert('CORN 양식 업로드 실패: ' + error.message);
+            alert('업로드 실패: ' + error.message);
             console.error(error);
+        } finally {
+            loader.style.display = 'none';
         }
     };
     reader.readAsArrayBuffer(file);
 }
 
+
 async function uploadCornLocations(file) {
     if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const loader = document.getElementById('loading-overlay');
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
+            loader.style.display = 'flex';
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
@@ -631,6 +814,8 @@ async function uploadCornLocations(file) {
         } catch (error) {
             alert('CORN 로케이션 양식 업로드 실패: ' + error.message);
             console.error(error);
+        } finally {
+            loader.style.display = 'none';
         }
     };
     reader.readAsArrayBuffer(file);
@@ -639,10 +824,12 @@ async function uploadCornLocations(file) {
 
 async function handleResetAndUpload(file) {
     if (!file) { alert('업로드할 파일을 선택하세요.'); return; }
+    const loader = document.getElementById('loading-overlay');
     if (!confirm(`현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제합니다. 계속하시겠습니까?`)) return;
     if (!confirm("정말로 모든 데이터를 삭제하고 새로 업로드하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
     try {
+        loader.style.display = 'flex';
         const { error: deleteError } = await supabaseClient
             .from('inventory_scans')
             .update({ deleted_at: new Date().toISOString() })
@@ -659,27 +846,40 @@ async function handleResetAndUpload(file) {
                 const sheetName = workbook.SheetNames[0];
                 const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
                 if(jsonData.length === 0){ alert('엑셀 파일에 데이터가 없습니다.'); return; }
-                
+
                 const dataToInsert = jsonData.map(row => ({
                     location_code: row.location_code,
-                    barcode: row.barcode,
+                    product_code: row.product_code,
                     expected_quantity: row.expected_quantity,
                     quantity: 0,
                     channel_id: currentChannelId
                 }));
+
+                if (dataToInsert.length === 0) {
+                    alert('업로드할 유효한 데이터가 없습니다.');
+                    return;
+                }
+
                 const { error: insertError } = await supabaseClient.from('inventory_scans').insert(dataToInsert);
                 if (insertError) throw insertError;
+
                 alert('전체 초기화 및 업로드 성공!');
                 refreshCurrentView();
             } catch (uploadError) {
                 alert('새 데이터 업로드 실패: ' + uploadError.message);
                 console.error(uploadError);
+            } finally {
+                loader.style.display = 'none';
             }
         };
         reader.readAsArrayBuffer(file);
     } catch (error) {
         alert('작업 실패: ' + error.message);
         console.error(error);
+    } finally {
+        if (loader.style.display === 'flex') {
+            loader.style.display = 'none';
+        }
     }
 }
 
@@ -688,6 +888,7 @@ async function handleCornResetAndUpload(file) {
         alert('업로드할 CORN 양식 파일을 선택하세요.');
         return;
     }
+    const loader = document.getElementById('loading-overlay');
     if (!confirm(`[CORN 양식] 현재 채널 [${channelSwitcher.options[channelSwitcher.selectedIndex].text}]의 모든 실사 현황 데이터를 영구적으로 삭제하고 CORN 양식으로 새로 업로드합니다. 계속하시겠습니까?`)) {
         return;
     }
@@ -696,6 +897,7 @@ async function handleCornResetAndUpload(file) {
     }
 
     try {
+        loader.style.display = 'flex';
         const { error: deleteError } = await supabaseClient
             .from('inventory_scans')
             .update({ deleted_at: new Date().toISOString() })
@@ -723,36 +925,30 @@ async function handleCornResetAndUpload(file) {
 
                 const dataRows = rows.slice(1);
                 
-                // 데이터를 집계하기 위한 객체
                 const aggregatedData = {};
 
                 dataRows.forEach(row => {
-                    // '합계' 행이거나 유효하지 않은 행은 건너뜁니다.
                     if (!row || (row[2] && String(row[2]).includes('합계'))) {
                         return;
                     }
                     
-                    const location = row[3] ? String(row[3]).trim() : null; // D열: 로케이션
-                    const barcode = row[5] ? String(row[5]).trim() : null;  // F열: 바코드
-                    const quantity = row[8]; // I열: 현재고
+                    const location = row[3] ? String(row[3]).trim() : null;
+                    const product_code = row[4] ? String(row[4]).trim() : null;
+                    const quantity = row[8];
 
-                    // 필수 데이터가 없는 경우 건너뜁니다.
-                    if (!location || !barcode) {
+                    if (!location || !product_code) {
                         return;
                     }
                     
-                    // 고유 키 생성 (로케이션 + 바코드)
-                    const key = `${location}___${barcode}`;
+                    const key = `${location}___${product_code}`;
                     const currentQuantity = Number(quantity) || 0;
 
                     if (aggregatedData[key]) {
-                        // 이미 키가 존재하면 수량을 더합니다.
                         aggregatedData[key].expected_quantity += currentQuantity;
                     } else {
-                        // 키가 없으면 새로 추가합니다.
                         aggregatedData[key] = {
                             location_code: location,
-                            barcode: barcode,
+                            product_code: product_code,
                             expected_quantity: currentQuantity,
                             quantity: 0,
                             channel_id: currentChannelId
@@ -760,12 +956,10 @@ async function handleCornResetAndUpload(file) {
                     }
                 });
                 
-                // 집계된 객체를 배열로 변환합니다.
                 const dataToInsert = Object.values(aggregatedData);
 
-
                 if (dataToInsert.length === 0) {
-                    alert("업로드할 유효한 데이터가 없습니다. 엑셀 파일의 D, F, I열 데이터와 '합계' 행을 확인해주세요.");
+                    alert("업로드할 유효한 데이터가 없습니다. 엑셀 파일의 D, E, I열 데이터와 '합계' 행을 확인해주세요.");
                     return;
                 }
 
@@ -780,12 +974,18 @@ async function handleCornResetAndUpload(file) {
             } catch (uploadError) {
                 alert('새 데이터 업로드 실패: ' + uploadError.message);
                 console.error(uploadError);
+            } finally {
+                loader.style.display = 'none';
             }
         };
         reader.readAsArrayBuffer(file);
     } catch (error) {
         alert('작업 실패: ' + error.message);
         console.error(error);
+    } finally {
+         if (loader.style.display === 'flex') {
+            loader.style.display = 'none';
+        }
     }
 }
 
@@ -807,7 +1007,9 @@ async function deleteSelected(tableName, primaryKeyColumn) {
     }
 
     if (confirm(`${idsToDelete.length}개의 항목을 정말로 삭제하시겠습니까?`)) {
+        const loader = document.getElementById('loading-overlay');
         try {
+            loader.style.display = 'flex';
             const chunkSize = 500;
             for (let i = 0; i < idsToDelete.length; i += chunkSize) {
                 const chunk = idsToDelete.slice(i, i + chunkSize);
@@ -838,6 +1040,8 @@ async function deleteSelected(tableName, primaryKeyColumn) {
         } catch (error) {
             alert('삭제 실패: ' + error.message);
             console.error(error);
+        } finally {
+            loader.style.display = 'none';
         }
     }
 }
@@ -913,7 +1117,7 @@ contentArea.addEventListener('click', async function(event) {
         currentFilters = {};
         if (sectionId === 'inventory-section') {
             currentFilters.location_code = document.getElementById('filter-location').value.trim();
-            currentFilters.barcode = document.getElementById('filter-barcode').value.trim();
+            currentFilters.product_search = document.getElementById('filter-product').value.trim();
         } else if (sectionId === 'products-section') {
             currentFilters.product_code = document.getElementById('filter-prod-code').value.trim();
             currentFilters.barcode = document.getElementById('filter-prod-barcode').value.trim();
@@ -972,7 +1176,7 @@ contentArea.addEventListener('click', async function(event) {
         }
     }
     else if (target.id === 'reset-template-download') {
-        downloadTemplateExcel(['location_code', 'barcode', 'expected_quantity'], 'inventory_reset_template.xlsx');
+        downloadTemplateExcel(['location_code', 'product_code', 'expected_quantity'], 'inventory_reset_template.xlsx');
     }
     else if (target.id === 'reset-upload-button') {
         const fileInput = document.getElementById('reset-upload-file');
@@ -1014,15 +1218,15 @@ contentArea.addEventListener('click', async function(event) {
         const tableToDownload = sectionId === 'inventory-section' ? 'inventory_scans' : tableName;
         
         if (tableToDownload === 'inventory_scans') {
-             const query = supabaseClient.from('inventory_scans').select(`*, products(product_code, product_name)`).eq('channel_id', currentChannelId).is('deleted_at', null);
-             const { data: inventoryData, error } = await fetchAllWithPagination(query);
+             const query = supabaseClient.rpc('get_inventory_status', { channel_id_param: currentChannelId });
+             const { data: inventoryData, error } = await query;
              if (error) { alert('데이터 다운로드 실패: ' + error.message); return; }
              const flattenedData = inventoryData.map((item, index) => ({
                 'No.': index + 1,
                 '로케이션': item.location_code,
-                '상품코드': item.products ? item.products.product_code : 'N/A',
-                '바코드': item.barcode,
-                '상품명': item.products ? item.products.product_name : 'N/A',
+                '상품코드': item.product_code,
+                '바코드': item.barcode || 'N/A',
+                '상품명': item.product_name || 'N/A',
                 '전산수량': item.expected_quantity || 0,
                 '실사수량': item.quantity || 0,
                 '차이': (item.quantity || 0) - (item.expected_quantity || 0),
