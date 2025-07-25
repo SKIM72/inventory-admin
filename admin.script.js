@@ -593,65 +593,40 @@ async function uploadData(tableName, onConflictColumn, file) {
             }
 
             if (tableName === 'products') {
+                const productsToUpsert = [];
                 const barcodeMap = new Map();
                 const duplicates = [];
+
                 jsonData.forEach(row => {
                     const product_code = row.product_code ? String(row.product_code).trim() : null;
+                    const product_name = row.product_name ? String(row.product_name).trim() : null;
                     const barcode = row.barcode ? String(row.barcode).trim() : null;
                     const finalBarcode = barcode || product_code;
 
+                    if (!product_code || !product_name) return;
+
                     if (barcodeMap.has(finalBarcode)) {
-                        if (!duplicates.includes(finalBarcode)) {
-                            duplicates.push(finalBarcode);
-                        }
+                        if (!duplicates.includes(finalBarcode)) duplicates.push(finalBarcode);
                     } else {
                         barcodeMap.set(finalBarcode, true);
                     }
+
+                    productsToUpsert.push({ product_code, product_name, barcode: finalBarcode, channel_id: currentChannelId });
                 });
 
                 if (duplicates.length > 0) {
                     throw new Error(`업로드를 중단했습니다. 엑셀 파일에 중복된 바코드가 존재합니다:\n\n${duplicates.join('\n')}\n\n엑셀 파일을 수정 후 다시 시도해주세요.`);
                 }
                 
-                const productMap = new Map();
-                jsonData.forEach(row => {
-                    const product_code = row.product_code ? String(row.product_code).trim() : null;
-                    const product_name = row.product_name ? String(row.product_name).trim() : null;
-                    const barcode = row.barcode ? String(row.barcode).trim() : null;
-
-                    if (!product_code || !product_name) return;
-                    
-                    const finalBarcode = barcode || product_code;
-
-                    if (productMap.has(product_code)) {
-                        productMap.get(product_code).barcodes.add(finalBarcode);
-                    } else {
-                        productMap.set(product_code, {
-                            product_name: product_name,
-                            barcodes: new Set([finalBarcode])
-                        });
-                    }
-                });
-
-                if (productMap.size === 0) {
+                if (productsToUpsert.length === 0) {
                     alert('업로드할 유효한 상품 데이터가 없습니다.');
                     return;
                 }
-
-                let totalUpsertedCount = 0;
-                for (const [product_code, data] of productMap.entries()) {
-                    for (const barcode of data.barcodes) {
-                        const { error } = await supabaseClient.from('products').upsert({
-                            product_code: product_code,
-                            product_name: data.product_name,
-                            barcode: barcode,
-                            channel_id: currentChannelId
-                        }, { onConflict: 'barcode, channel_id' });
-                        if (error) throw error;
-                        totalUpsertedCount++;
-                    }
-                }
-                alert(`총 ${totalUpsertedCount}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
+                
+                const { error } = await supabaseClient.from('products').upsert(productsToUpsert, { onConflict: 'barcode, channel_id' });
+                if (error) throw error;
+                
+                alert(`총 ${productsToUpsert.length}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
 
             } else {
                 const dataToUpsert = jsonData.map(row => ({ ...row, channel_id: currentChannelId }));
@@ -690,71 +665,40 @@ async function uploadCornData(file) {
             }
             const dataRows = rows.slice(2);
 
+            const productsToUpsert = [];
             const barcodeMap = new Map();
             const duplicates = [];
+
             dataRows.forEach(row => {
                 const product_code = row[2] ? String(row[2]).trim() : null;
+                const product_name = row[3] ? String(row[3]).trim() : null;
                 const barcode = row[10] ? String(row[10]).trim() : null;
                 const finalBarcode = barcode || product_code;
 
-                if (!finalBarcode) return;
+                if (!product_code || !product_name) return;
 
                 if (barcodeMap.has(finalBarcode)) {
-                    if (!duplicates.includes(finalBarcode)) {
-                        duplicates.push(finalBarcode);
-                    }
+                    if (!duplicates.includes(finalBarcode)) duplicates.push(finalBarcode);
                 } else {
                     barcodeMap.set(finalBarcode, true);
                 }
+                
+                productsToUpsert.push({ product_code, product_name, barcode: finalBarcode, channel_id: currentChannelId });
             });
 
             if (duplicates.length > 0) {
                 throw new Error(`업로드를 중단했습니다. 엑셀 파일에 중복된 바코드가 존재합니다:\n\n${duplicates.join('\n')}\n\n엑셀 파일을 수정 후 다시 시도해주세요.`);
             }
 
-            const productMap = new Map();
-            dataRows.forEach(row => {
-                const product_code = row[2] ? String(row[2]).trim() : null;
-                const product_name = row[3] ? String(row[3]).trim() : null;
-                const barcode = row[10] ? String(row[10]).trim() : null;
-
-                if (!product_code || !product_name) return;
-
-                const finalBarcode = barcode || product_code;
-
-                if (productMap.has(product_code)) {
-                    productMap.get(product_code).barcodes.add(finalBarcode);
-                } else {
-                    productMap.set(product_code, {
-                        product_name: product_name,
-                        barcodes: new Set([finalBarcode])
-                    });
-                }
-            });
-            
-            if (productMap.size === 0) {
+            if (productsToUpsert.length === 0) {
                 alert('추출할 유효한 데이터가 없습니다. C, D, K열을 확인해주세요.');
                 return;
             }
-
-            let totalUpsertedCount = 0;
-            for (const [product_code, data] of productMap.entries()) {
-                for (const barcode of data.barcodes) {
-                    const { error } = await supabaseClient.from('products').upsert({
-                        product_code: product_code,
-                        product_name: data.product_name,
-                        barcode: barcode,
-                        channel_id: currentChannelId
-                    }, { onConflict: 'barcode, channel_id' });
-
-                    if (error) {
-                        throw new Error(`'${product_code}' 상품의 바코드(${barcode}) 업로드 중 오류 발생: ${error.message}`);
-                    }
-                    totalUpsertedCount++;
-                }
-            }
-
-            alert(`총 ${totalUpsertedCount}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
+            
+            const { error } = await supabaseClient.from('products').upsert(productsToUpsert, { onConflict: 'barcode, channel_id' });
+            if (error) throw error;
+            
+            alert(`총 ${productsToUpsert.length}개의 상품(바코드 기준)을 성공적으로 업로드/업데이트했습니다.`);
             refreshCurrentView();
 
         } catch (error) {
