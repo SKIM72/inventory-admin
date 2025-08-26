@@ -8,38 +8,65 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* 테이블 공통 스타일 */
+        .table-wrapper table {
+            table-layout: fixed; /* 테이블 레이아웃을 고정하여 너비 설정이 정확하게 적용되도록 합니다. */
+            width: 100%;
+        }
+
+        /* 첫 번째 열(체크박스) 스타일 */
+        .table-wrapper table th:nth-child(1),
+        .table-wrapper table td:nth-child(1) {
+            width: 45px; /* 체크박스 열의 너비를 45px로 지정 */
+            text-align: center;
+        }
+
+        /* 두 번째 열(No.) 스타일 */
+        .table-wrapper table th:nth-child(2),
+        .table-wrapper table td:nth-child(2) {
+            width: 70px; /* No. 열의 너비를 70px로 지정 */
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
     <div id="loading-overlay" class="loading-overlay">
         <div class="loading-spinner"></div>
         <p>처리 중입니다... 잠시만 기다려주세요.</p>
     </div>
-    <header>
-        <h1 id="home-button" style="cursor: pointer;">재고 실사 시스템 - 관리자</h1>
-        <div class="header-user-info">
-            <span id="current-user-email"></span>
-            <button id="logout-button" class="btn-secondary">로그아웃</button>
-        </div>
-    </header>
-    <nav>
-        <div id="channel-switcher-container">
-            <label for="channel-switcher">채널:</label>
-            <select id="channel-switcher"></select>
-        </div>
-        <button id="nav-inventory">실사 현황</button>
-        <button id="nav-products">상품 마스터</button>
-        <button id="nav-locations">로케이션 마스터</button>
-        <button id="nav-channels">채널 관리</button>
-        <button id="nav-users">사용자 관리</button>
-    </nav>
-    <main id="content-area">
-        <div id="home-section">
-            <h2>전체 재고 실사 요약 (모든 채널)</h2>
-            <div id="global-summary-container" class="card" style="padding: 2rem; font-size: 1.2rem; display: flex; justify-content: space-around;">
-                <p>요약 정보를 불러오는 중...</p>
+
+    <div class="app-layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 id="home-button">재고 실사 시스템</h1>
             </div>
+            <nav>
+                <div id="channel-switcher-container">
+                    <label for="channel-switcher">현재 채널:</label>
+                    <select id="channel-switcher"></select>
+                </div>
+                <div class="nav-buttons">
+                    <button id="nav-inventory">실사 현황</button>
+                    <button id="nav-products">상품 마스터</button>
+                    <button id="nav-locations">로케이션 마스터</button>
+                    <button id="nav-channels">채널 관리</button>
+                    <button id="nav-users">사용자 관리</button>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <span id="current-user-email"></span>
+                <button id="logout-button" class="btn-secondary" style="width: 100%;">로그아웃</button>
+            </div>
+        </aside>
+
+        <div class="main-content">
+             <main id="content-area">
+             </main>
         </div>
-    </main>
+    </div>
+
     <script src="admin.script.js"></script>
 </body>
 </html>

@@ -2,6 +2,16 @@
 const { createClient } = supabase;
 const supabaseClient = createClient('https://qjftovamkqhxaenueood.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZnRvdmFta3FoeGFlbnVlb29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMzQxMTgsImV4cCI6MjA2NzYxMDExOH0.qpMLaPEkMEmXeRg7193JqjFyUdntIxq3Q3kARUqGS18');
 
+// --- SVG Icons ---
+const icons = {
+    refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>`,
+    download: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" /><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" /></svg>`,
+    search: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" /></svg>`,
+    reset: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>`,
+    delete: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg>`,
+    upload: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M9.25 13.5a.75.75 0 001.5 0V4.614l2.955 3.13a.75.75 0 101.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.614V13.5z" /><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" /></svg>`
+};
+
 // 로그인 및 관리자 권한 확인
 (async () => {
     const { data: { session }, error } = await supabaseClient.auth.getSession();
@@ -230,43 +240,38 @@ async function showInventoryStatus() {
             <div class="page-header">
                 <h2>실사 현황</h2>
                 <div class="actions-group">
-                    <button class="refresh-view-button btn-secondary">새로고침</button>
-                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                    <button class="refresh-view-button btn-secondary">${icons.refresh} 새로고침</button>
+                    <button class="download-excel btn-primary">${icons.download} 엑셀 다운로드</button>
+                    <button class="delete-selected btn-danger-outline">${icons.delete} 선택 삭제</button>
                 </div>
             </div>
-            <div class="control-grid">
+            <div class="control-grid control-grid-inventory">
                 <div class="card">
                     <div class="card-header">필터 및 검색</div>
-                    <div class="card-body">
+                    <div class="card-body card-body-filters">
                         <input type="text" id="filter-location" class="filter-input" placeholder="로케이션 검색..." value="${currentFilters.location_code || ''}">
                         <input type="text" id="filter-product" class="filter-input" placeholder="바코드/상품코드/상품명 검색..." value="${currentFilters.product_search || ''}">
-                        <button class="search-button btn-primary">검색</button>
-                        <button class="reset-button btn-secondary">초기화</button>
+                        <button class="search-button btn-primary">${icons.search} 검색</button>
+                        <button class="reset-button btn-secondary">${icons.reset} 초기화</button>
                     </div>
                 </div>
-                <div class="card">
-                    <div class="card-header">데이터 관리</div>
-                    <div class="card-body">
-                        <button class="delete-selected btn-danger">선택 삭제</button>
-                    </div>
-                </div>
-                 <div class="card danger-zone">
+                <div class="card danger-zone">
                     <div class="card-header">⚠️ 전체 초기화 (주의)</div>
-                    <div class="card-body" style="flex-direction: column; align-items: stretch;">
+                    <div class="card-body" style="flex-direction: column; align-items: stretch; gap: 1rem;">
                         <div>
                             <strong>표준 양식</strong>
-                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;">
-                               <button id="reset-template-download" class="btn-secondary">양식 다운로드</button>
-                               <input type="file" id="reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
-                               <button id="reset-upload-button" class="btn-danger">초기화 및 업로드</button>
+                            <div class="upload-group" style="margin-top: 0.5rem;">
+                               <button id="reset-template-download" class="btn-secondary">${icons.download} 양식</button>
+                               <input type="file" id="reset-upload-file" accept=".xlsx, .xls">
+                               <button id="reset-upload-button" class="btn-danger">${icons.upload} 초기화 및 업로드</button>
                             </div>
                         </div>
-                        <hr style="width: 100%; margin: 1rem 0; border-top: 1px solid var(--border-color); border-bottom: 0;">
+                        <hr style="width: 100%; margin: 0; border-top: 1px solid var(--border-color); border-bottom: 0;">
                         <div>
-                            <strong>CORN 양식</strong>
-                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;" title="CORN 재고 > 재고 조회 > 재고 현황 로케이션/상품별/LOT별 메뉴에서 엑셀다운">
-                                <input type="file" id="corn-reset-upload-file" accept=".xlsx, .xls" style="flex-grow: 1;">
-                                <button id="corn-reset-upload-button" class="btn-danger">CORN 양식으로 초기화</button>
+                            <strong title="CORN 재고 > 재고 조회 > 재고 현황 로케이션/상품별/LOT별 메뉴에서 엑셀다운">CORN 양식</strong>
+                            <div class="upload-group" style="margin-top: 0.5rem;">
+                                <input type="file" id="corn-reset-upload-file" accept=".xlsx, .xls">
+                                <button id="corn-reset-upload-button" class="btn-danger">${icons.upload} CORN 양식으로 초기화</button>
                             </div>
                         </div>
                     </div>
@@ -365,14 +370,43 @@ async function showProductMaster() {
             <div class="page-header">
                 <h2>상품 마스터 관리</h2>
                 <div class="actions-group">
-                    <button class="refresh-view-button btn-secondary">새로고침</button>
-                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                    <button class="refresh-view-button btn-secondary">${icons.refresh} 새로고침</button>
+                    <button class="download-excel btn-primary">${icons.download} 엑셀 다운로드</button>
+                    <button class="delete-selected btn-danger-outline">${icons.delete} 선택 삭제</button>
                 </div>
             </div>
             <div class="control-grid">
-                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}"><input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}"><input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-                <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-                <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운"><input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-button" class="btn-primary">업로드 실행</button></div></div>
+                <div class="card">
+                    <div class="card-header">필터 및 검색</div>
+                    <div class="card-body card-body-filters">
+                        <input type="text" id="filter-prod-code" class="filter-input" placeholder="상품코드 검색..." value="${currentFilters.product_code || ''}">
+                        <input type="text" id="filter-prod-barcode" class="filter-input" placeholder="바코드 검색..." value="${currentFilters.barcode || ''}">
+                        <input type="text" id="filter-prod-name" class="filter-input" placeholder="상품명 검색..." value="${currentFilters.product_name || ''}">
+                        <button class="search-button btn-primary">${icons.search} 검색</button>
+                        <button class="reset-button btn-secondary">${icons.reset} 초기화</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">데이터 관리 (표준 양식)</div>
+                    <div class="card-body" style="flex-direction: column; align-items: stretch; gap: 1rem;">
+                        <div class="upload-group">
+                            <button class="download-template btn-secondary" style="flex-shrink: 0;">${icons.download} 양식 다운로드</button>
+                        </div>
+                        <div class="upload-group">
+                           <input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls">
+                           <button class="upload-data btn-primary">${icons.upload} 업로드 실행</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" title="CORN [기준정보 > 상품관리 > 상품정보조회] 에서 엑셀다운">CORN 양식 업로드</div>
+                    <div class="card-body">
+                        <div class="upload-group">
+                            <input type="file" id="upload-corn-file" class="upload-file" accept=".xlsx, .xls">
+                            <button id="upload-corn-button" class="btn-primary">${icons.upload} 업로드 실행</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="record-count-container" style="text-align: left; padding: 0.5rem 0 0 0.5rem;"></div>
@@ -391,7 +425,6 @@ async function showProductMaster() {
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
     
-    // 데이터 건수 표시
     const recordCountContainer = contentArea.querySelector('#record-count-container');
     if (recordCountContainer) {
         recordCountContainer.innerHTML = `<strong>총 ${data.length.toLocaleString()} 건</strong>`;
@@ -416,14 +449,41 @@ async function showLocationMaster() {
             <div class="page-header">
                 <h2>로케이션 마스터 관리</h2>
                 <div class="actions-group">
-                    <button class="refresh-view-button btn-secondary">새로고침</button>
-                    <button class="download-excel btn-primary">엑셀 다운로드</button>
+                    <button class="refresh-view-button btn-secondary">${icons.refresh} 새로고침</button>
+                    <button class="download-excel btn-primary">${icons.download} 엑셀 다운로드</button>
+                    <button class="delete-selected btn-danger-outline">${icons.delete} 선택 삭제</button>
                 </div>
             </div>
             <div class="control-grid">
-                <div class="card"><div class="card-header">필터 및 검색</div><div class="card-body"><input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}"><button class="search-button btn-primary">검색</button><button class="reset-button btn-secondary">초기화</button></div></div>
-                <div class="card"><div class="card-header">데이터 관리 (표준 양식)</div><div class="card-body"><button class="download-template btn-secondary">양식 다운로드</button><input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls"><button class="upload-data btn-primary">업로드 실행</button><button class="delete-selected btn-danger">선택 삭제</button></div></div>
-                <div class="card"><div class="card-header">CORN 양식 업로드</div><div class="card-body" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운"><input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls"><button id="upload-corn-locations-button" class="btn-primary">업로드 실행</button></div></div>
+                <div class="card">
+                    <div class="card-header">필터 및 검색</div>
+                    <div class="card-body card-body-filters">
+                        <input type="text" id="filter-loc-code" class="filter-input" placeholder="로케이션 코드 검색..." value="${currentFilters.location_code || ''}">
+                        <button class="search-button btn-primary">${icons.search} 검색</button>
+                        <button class="reset-button btn-secondary">${icons.reset} 초기화</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">데이터 관리 (표준 양식)</div>
+                    <div class="card-body" style="flex-direction: column; align-items: stretch; gap: 1rem;">
+                        <div class="upload-group">
+                            <button class="download-template btn-secondary" style="flex-shrink: 0;">${icons.download} 양식 다운로드</button>
+                        </div>
+                        <div class="upload-group">
+                            <input type="file" id="upload-file" class="upload-file" accept=".xlsx, .xls">
+                            <button class="upload-data btn-primary">${icons.upload} 업로드 실행</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" title="CORN [기준정보 > 물류센터관리 > 로케이션 관리 > 복수] 에서 엑셀다운">CORN 양식 업로드</div>
+                    <div class="card-body">
+                        <div class="upload-group">
+                            <input type="file" id="upload-corn-locations-file" class="upload-file" accept=".xlsx, .xls">
+                            <button id="upload-corn-locations-button" class="btn-primary">${icons.upload} 업로드 실행</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="record-count-container" style="text-align: left; padding: 0.5rem 0 0 0.5rem;"></div>
@@ -440,7 +500,6 @@ async function showLocationMaster() {
     const { data, error } = await fetchAllWithPagination(query);
     if (error) { tableContainer.innerHTML = `<p class="no-data-message">데이터를 불러오는 데 실패했습니다.</p>`; return; }
 
-    // 데이터 건수 표시
     const recordCountContainer = contentArea.querySelector('#record-count-container');
     if (recordCountContainer) {
         recordCountContainer.innerHTML = `<strong>총 ${data.length.toLocaleString()} 건</strong>`;
@@ -465,7 +524,7 @@ async function showChannelMaster() {
             <div class="page-header">
                 <h2>채널 관리</h2>
                 <div class="actions-group">
-                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="refresh-view-button btn-secondary">${icons.refresh} 새로고침</button>
                 </div>
             </div>
             <div class="channel-management-grid">
@@ -494,7 +553,7 @@ async function showChannelMaster() {
 
     let listHTML = '<ul class="channel-list">';
     data.forEach(channel => {
-        listHTML += `<li class="channel-list-item"><span class="channel-name">${channel.name} (ID: ${channel.id})</span><button class="delete-channel-button btn-danger" data-id="${channel.id}" data-name="${channel.name}">삭제</button></li>`;
+        listHTML += `<li class="channel-list-item"><span class="channel-name">${channel.name} (ID: ${channel.id})</span><button class="delete-channel-button btn-danger-outline" data-id="${channel.id}" data-name="${channel.name}">${icons.delete} 삭제</button></li>`;
     });
     listHTML += '</ul>';
     listContainer.innerHTML = listHTML;
@@ -506,7 +565,7 @@ async function showUserManagement() {
             <div class="page-header">
                 <h2>사용자 관리</h2>
                 <div class="actions-group">
-                    <button class="refresh-view-button btn-secondary">새로고침</button>
+                    <button class="refresh-view-button btn-secondary">${icons.refresh} 새로고침</button>
                 </div>
             </div>
             <div class="card">
@@ -546,6 +605,8 @@ async function showUserManagement() {
     listContainer.innerHTML = listHTML;
 }
 
+// (이하 스크립트는 기존과 동일하게 유지)
+// ... function updateSortIndicator() { ... } 부터 끝까지 모든 코드를 붙여넣으세요 ...
 function updateSortIndicator() {
     contentArea.querySelectorAll('th.sortable').forEach(th => {
         const icon = th.querySelector('.sort-icon');
@@ -1016,8 +1077,9 @@ function handleNavClick(event) {
 
 contentArea.addEventListener('click', async function(event) {
     const target = event.target;
+    
     const section = target.closest('.content-section');
-    if (!section) return;
+    if (!section && !target.classList.contains('approve-user-button') && !target.classList.contains('delete-channel-button')) return;
 
     if (target.classList.contains('refresh-view-button')) {
         refreshCurrentView();
@@ -1044,7 +1106,7 @@ contentArea.addEventListener('click', async function(event) {
         return;
     }
     
-    const sectionId = section.id;
+    const sectionId = section ? section.id : null;
     let tableName, primaryKey, fileName;
 
     if (sectionId === 'products-section') {
