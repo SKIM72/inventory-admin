@@ -188,9 +188,11 @@
                 <button type="submit" class="w-full py-3 font-bold text-white rounded-lg submit-btn">비밀번호 변경</button>
             </form>
             <p id="update-password-message" class="text-center h-4 text-green-300"></p>
+            <div class="text-center">
+                <a href="#" id="show-login-from-update" class="text-sm text-gray-200 hover:text-white transition hidden">로그인 화면으로 돌아가기</a>
+            </div>
         </div>
     </div>
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const { createClient } = window.supabase;
@@ -221,6 +223,14 @@
             document.getElementById('show-reset').addEventListener('click', (e) => { e.preventDefault(); toggleAuthForms('reset'); });
             document.getElementById('show-login-from-reset').addEventListener('click', (e) => { e.preventDefault(); toggleAuthForms('login'); });
 
+            // ▼▼▼ JavaScript 추가된 부분 ▼▼▼
+            document.getElementById('show-login-from-update').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.hash = '';
+                location.reload();
+            });
+            // ▲▲▲ JavaScript 추가된 부분 ▲▲▲
+
             supabaseClient.auth.onAuthStateChange(async (event, session) => {
                 if (event === 'PASSWORD_RECOVERY') {
                     toggleAuthForms('update-password');
@@ -228,7 +238,6 @@
             });
 
             function showLoader(show) {
-                // Now uses the class to show/hide
                 loadingOverlay.style.display = show ? 'flex' : 'none';
             }
 
@@ -326,6 +335,7 @@
                 showLoader(false);
             }
 
+            // ▼▼▼ JavaScript 수정된 부분 ▼▼▼
             async function handlePasswordUpdate(e) {
                 e.preventDefault();
                 showLoader(true);
@@ -343,14 +353,15 @@
                 if (error) {
                     updatePasswordMessage.textContent = '비밀번호 업데이트 실패: ' + error.message;
                 } else {
-                    updatePasswordMessage.textContent = '비밀번호가 성공적으로 변경되었습니다. 로그인해주세요.';
-                    setTimeout(() => {
-                        window.location.hash = '';
-                        location.reload();
-                    }, 3000);
+                    updatePasswordMessage.textContent = '비밀번호가 성공적으로 변경되었습니다.';
+                    
+                    // 비밀번호 변경 폼을 숨기고, 로그인 화면으로 돌아가기 버튼을 표시
+                    document.getElementById('update-password-form').classList.add('hidden');
+                    document.getElementById('show-login-from-update').classList.remove('hidden');
                 }
                 showLoader(false);
             }
+            // ▲▲▲ JavaScript 수정된 부분 ▲▲▲
         });
     </script>
 </body>
